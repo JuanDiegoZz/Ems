@@ -89,7 +89,7 @@ button, a, input, select { transition: border-color .18s ease, background-color 
 .toast-error { background: rgba(239,68,68,.14); border-color: rgba(248,113,113,.25); color: #fecaca; }
 .modal { background: var(--surface-2); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 24px 70px rgba(2,6,23,.5); margin: auto; max-width: min(92vw, 480px); }
 .upload-dropzone { align-items: center; background: rgba(15,23,42,.45); border: 1px dashed rgba(148,163,184,.35); border-radius: 16px; cursor: pointer; display: grid; gap: 8px; min-height: 148px; padding: 20px; text-align: center; }
-.upload-dropzone:hover, .upload-dropzone.is-dragging { background: rgba(59,130,246,.1); border-color: var(--primary); }
+.upload-dropzone:hover, .upload-dropzone.is-dragging, .upload-dropzone.is-paste-target { background: rgba(59,130,246,.1); border-color: var(--primary); }
 .upload-dropzone.is-loaded { border-style: solid; border-color: rgba(34,197,94,.38); }
 .upload-preview { background: #020617; border-radius: 12px; height: 220px; max-height: 300px; object-fit: contain; width: 100%; }
 .muted { color: var(--muted); }

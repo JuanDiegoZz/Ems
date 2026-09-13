@@ -16,6 +16,8 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
   const [displayName, setDisplayName] = useState(person.display_name);
   const [displayNameManual, setDisplayNameManual] = useState(person.display_name !== `${person.first_name} ${person.last_name}`);
   const [badgeNumber, setBadgeNumber] = useState(person.badge_number ?? "");
+  const [ineFile, setIneFile] = useState<File | null>(null);
+  const [badgeFile, setBadgeFile] = useState<File | null>(null);
   const [manualIdentity, setManualIdentity] = useState({ first: false, last: false });
   const [removeBadge, setRemoveBadge] = useState(false);
   const [ocrMessage, setOcrMessage] = useState("");
@@ -48,7 +50,12 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/people/${person.id}`, { method: "PATCH", body: new FormData(event.currentTarget) });
+      const form = new FormData(event.currentTarget);
+      form.delete("ine");
+      form.delete("badge");
+      if (ineFile) form.append("ine", ineFile, ineFile.name);
+      if (badgeFile) form.append("badge", badgeFile, badgeFile.name);
+      const response = await fetch(`/api/people/${person.id}`, { method: "PATCH", body: form });
       const data = await response.json().catch(() => null) as { error?: string } | null;
       if (!response.ok) {
         setError(data?.error ?? "No se pudo actualizar la persona");
@@ -70,9 +77,9 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
     <label className="field">Nombre visible<input required name="displayName" value={displayName} onChange={(event) => { setDisplayName(event.target.value); setDisplayNameManual(true); }} className="field-input" /></label>
     {displayNameManual && <button className="button button-ghost justify-self-start text-sm" type="button" onClick={() => { setDisplayNameManual(false); setDisplayName(autoDisplay); }}>Restablecer automático</button>}
     {person.ine_path && <div className="grid gap-2"><span className="field">INE actual</span><DocumentViewer personId={person.id} personName={person.display_name} kind="ine" label="Ver INE completa" /></div>}
-    <UploadDropzone name="ine" label={person.ine_path ? "Cambiar INE" : "Subir INE"} onFile={readIne} />
+    <UploadDropzone name="ine" label={person.ine_path ? "Cambiar INE" : "Subir INE"} pasteTarget="ine" formField={false} onFile={(file) => { setIneFile(file); void readIne(file); }} />
     {ocrMessage && <p className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-3 text-sm text-[var(--text-secondary)]" aria-live="polite">{ocrMessage}{ocrProgress > 0 && ` ${ocrProgress}%`}</p>}
-    {person.type === "police" && <><label className="field">Número de placa<input name="badgeNumber" value={badgeNumber} onChange={(event) => setBadgeNumber(event.target.value)} className="field-input" placeholder="Número de placa" /></label>{person.badge_path && <div className="grid gap-2"><span className="field">Placa actual</span><DocumentViewer personId={person.id} personName={person.display_name} kind="badge" label="Ver placa completa" /></div>}<BadgeOcrInput onDetected={setBadgeNumber} /><label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]"><input type="checkbox" name="removeBadge" value="yes" checked={removeBadge} onChange={(event) => setRemoveBadge(event.target.checked)} /> Quitar imagen de placa actual</label></>}
+    {person.type === "police" && <><label className="field">Número de placa<input name="badgeNumber" value={badgeNumber} onChange={(event) => setBadgeNumber(event.target.value)} className="field-input" placeholder="Número de placa" /></label>{person.badge_path && <div className="grid gap-2"><span className="field">Placa actual</span><DocumentViewer personId={person.id} personName={person.display_name} kind="badge" label="Ver placa completa" /></div>}<BadgeOcrInput formField={false} onFile={setBadgeFile} onDetected={setBadgeNumber} /><label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]"><input type="checkbox" name="removeBadge" value="yes" checked={removeBadge} onChange={(event) => setRemoveBadge(event.target.checked)} /> Quitar imagen de placa actual</label></>}
     {error && <p className="form-error" role="alert">{error}</p>}
     <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Guardando…" : "Guardar cambios"}</button>
   </form>;

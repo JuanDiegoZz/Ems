@@ -18,12 +18,13 @@ async function loadBadgeWorker(onProgress: (value: number) => void): Promise<Ocr
   return worker;
 }
 
-export function BadgeOcrInput({ onDetected }: { onDetected: (value: string) => void }) {
+export function BadgeOcrInput({ onDetected, onFile, formField = true }: { onDetected: (value: string) => void; onFile?: (file: File) => void; formField?: boolean }) {
   const [message, setMessage] = useState("Puedes subir la imagen de placa y escribir el número manualmente.");
   const [progress, setProgress] = useState(0);
   const [debug, setDebug] = useState<{ originalUrl: string; plate?: OcrPlateRegions; number?: OcrPlateRegions["number"]; raw: string; error?: string } | null>(null);
 
   async function readBadge(file: File) {
+    onFile?.(file);
     setMessage("Leyendo placa…");
     setProgress(0);
     let worker: OcrWorker | undefined;
@@ -67,5 +68,5 @@ export function BadgeOcrInput({ onDetected }: { onDetected: (value: string) => v
     }
   }
 
-  return <div className="grid gap-2"><UploadDropzone name="badge" label="Subir imagen de placa" onFile={readBadge} /><p className="text-sm text-[var(--muted)]" aria-live="polite">{message}{progress > 0 && ` ${progress}%`}</p>{DEBUG && debug && <details className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-xs"><summary className="cursor-pointer font-semibold">OCR DEBUG placa</summary><div className="mt-3 grid gap-3"><figure><figcaption>Imagen original</figcaption><OcrDebugImage src={debug.originalUrl} alt="Imagen original de placa" className="max-h-40 w-full object-contain" /></figure>{debug.plate && <figure><figcaption>Placa detectada</figcaption><OcrDebugImage src={debug.plate.plate.previewUrl} alt="Placa completa detectada" className="max-h-56 w-full object-contain" /></figure>}{debug.number && <figure><figcaption>Crop del número</figcaption><OcrDebugImage src={debug.number.previewUrl} alt="Crop del número de placa" className="max-h-32 w-full object-contain" /></figure>}<p><strong>Raw:</strong> <code>{debug.raw || "(pendiente)"}</code></p>{debug.error && <pre className="whitespace-pre-wrap text-red-300">{debug.error}</pre>}</div></details>}</div>;
+  return <div className="grid gap-2"><UploadDropzone name="badge" label="Subir imagen de placa" pasteTarget="badge" formField={formField} onFile={readBadge} /><p className="text-sm text-[var(--muted)]" aria-live="polite">{message}{progress > 0 && ` ${progress}%`}</p>{DEBUG && debug && <details className="rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-xs"><summary className="cursor-pointer font-semibold">OCR DEBUG placa</summary><div className="mt-3 grid gap-3"><figure><figcaption>Imagen original</figcaption><OcrDebugImage src={debug.originalUrl} alt="Imagen original de placa" className="max-h-40 w-full object-contain" /></figure>{debug.plate && <figure><figcaption>Placa detectada</figcaption><OcrDebugImage src={debug.plate.plate.previewUrl} alt="Placa completa detectada" className="max-h-56 w-full object-contain" /></figure>}{debug.number && <figure><figcaption>Crop del número</figcaption><OcrDebugImage src={debug.number.previewUrl} alt="Crop del número de placa" className="max-h-32 w-full object-contain" /></figure>}<p><strong>Raw:</strong> <code>{debug.raw || "(pendiente)"}</code></p>{debug.error && <pre className="whitespace-pre-wrap text-red-300">{debug.error}</pre>}</div></details>}</div>;
 }

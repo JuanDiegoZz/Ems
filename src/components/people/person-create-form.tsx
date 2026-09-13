@@ -8,6 +8,7 @@ import { UploadDropzone } from "@/components/ui/upload-dropzone";
 import { BadgeOcrInput } from "./badge-ocr-input";
 import { DniV2DebugPanel } from "./dni-v2-debug-panel";
 import { buildDisplayName } from "@/lib/people/display-name";
+import { validateSelectedIne, type PersonType } from "@/lib/people/validation";
 
 const DEBUG = process.env.NEXT_PUBLIC_OCR_DEBUG === "true";
 
@@ -15,6 +16,8 @@ export function PersonCreateForm() {
   const router = useRouter();
   const [type, setType] = useState("civil");
   const [ocr, setOcr] = useState<DniV2Fields>({ firstName: "", lastName: "", status: "empty", confidence: "low", firstNameConfidence: 0, lastNameConfidence: 0, strategy: "full-image-rows" });
+  const [ineFile, setIneFile] = useState<File | null>(null);
+  const [badgeFile, setBadgeFile] = useState<File | null>(null);
   const [manualIdentity, setManualIdentity] = useState({ first: false, last: false });
   const [displayName, setDisplayName] = useState("");
   const [displayNameManual, setDisplayNameManual] = useState(false);
@@ -48,9 +51,17 @@ export function PersonCreateForm() {
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault();
+    const documentError = validateSelectedIne(type as PersonType, Boolean(ineFile));
+    if (documentError) { setError(documentError); return; }
+    setBusy(true); setError("");
     try {
       const form = new FormData(event.currentTarget);
+      form.delete("ine");
+      form.delete("badge");
+      if (ineFile) form.append("ine", ineFile, ineFile.name);
+      if (type === "police" && badgeFile) form.append("badge", badgeFile, badgeFile.name);
+      if (process.env.NODE_ENV === "development") console.debug("[people/new] INE submit state", { personType: type, hasIneFile: Boolean(ineFile), ineName: ineFile?.name, ineType: ineFile?.type, ineSize: ineFile?.size });
       let response = await fetch("/api/people", { method: "POST", body: form });
       if (response.status === 409 && window.confirm("Ya existe una coincidencia probable. ¿Deseas registrar de todos modos?")) { form.set("confirmDuplicates", "yes"); response = await fetch("/api/people", { method: "POST", body: form }); }
       const data = await response.json().catch(() => null) as { id?: string; error?: string } | null;
@@ -73,6 +84,22 @@ export function PersonCreateForm() {
     if (!displayNameManual) setDisplayName(buildDisplayName(ocr.firstName, value));
   }
 
+  function handleIneFile(file: File) {
+    setIneFile(file);
+    setError("");
+    void readIne(file);
+  }
+
+  function clearIne() {
+    setIneFile(null);
+    setManualIdentity({ first: false, last: false });
+    setOcr((current) => ({ ...current, firstName: "", lastName: "", status: "empty", confidence: "low" }));
+    if (!displayNameManual) setDisplayName("");
+    setOcrMessage(type === "civil" ? "La INE es obligatoria para civiles." : "Puedes continuar sin INE y completar el documento después.");
+    setDebug(null);
+    setError("");
+  }
+
   const autoDisplayName = buildDisplayName(ocr.firstName, ocr.lastName);
-  return <form onSubmit={submit} className="glass-card grid gap-5 p-6"><label className="field">Tipo de persona<select name="type" className="field-input" value={type} onChange={(event) => setType(event.target.value)}><option value="civil">Civil</option><option value="police">Policía</option></select></label>{type === "police" && <p className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 text-sm text-[var(--text-secondary)]">Puedes registrar al policía con INE, placa o ambos. Luego podrás completar la información faltante.</p>}<UploadDropzone name="ine" label="Subir INE" required={type === "civil"} onFile={readIne} /><div aria-live="polite" className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-3 text-sm text-[var(--text-secondary)]">{ocrMessage}{progress > 0 && <span> {progress}%</span>}</div>{DEBUG && debug?.data && <DniV2DebugPanel originalUrl={debug.originalUrl} debug={debug.data} fields={ocr} />}{DEBUG && debug?.error && <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-red-300">{debug.error}</pre>}<div className="grid gap-4 sm:grid-cols-2"><label className="field">Nombre<input required name="firstName" className="field-input" placeholder="Nombre" value={ocr.firstName} onChange={(event) => setFirstName(event.target.value)} /></label><label className="field">Apellido<input required name="lastName" className="field-input" placeholder="Apellido" value={ocr.lastName} onChange={(event) => setLastName(event.target.value)} /></label></div><label className="field">Nombre visible<input required name="displayName" className="field-input" placeholder="Nombre visible" value={displayName} onChange={(event) => { setDisplayName(event.target.value); setDisplayNameManual(true); }} /></label>{displayNameManual && <button className="button button-ghost justify-self-start text-sm" type="button" onClick={() => { setDisplayNameManual(false); setDisplayName(autoDisplayName); }}>Restablecer automático</button>}{type === "police" && <label className="field">Número de placa<input name="badgeNumber" className="field-input" placeholder="Número de placa" value={badgeNumber} onChange={(event) => setBadgeNumber(event.target.value)} /></label>}{type === "police" && <BadgeOcrInput onDetected={setBadgeNumber} />}{error && <p className="form-error" role="alert">{error}</p>}<button disabled={busy} className="button button-primary" type="submit">{busy ? "Guardando…" : "Confirmar y registrar"}</button></form>;
+  return <form onSubmit={submit} className="glass-card grid gap-5 p-6"><label className="field">Tipo de persona<select name="type" className="field-input" value={type} onChange={(event) => setType(event.target.value)}><option value="civil">Civil</option><option value="police">Policía</option></select></label>{type === "police" && <p className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 text-sm text-[var(--text-secondary)]">Puedes registrar al policía con INE, placa o ambos. Luego podrás completar la información faltante.</p>}<UploadDropzone name="ine" label="Subir INE" pasteTarget="ine" formField={false} allowRemove onFile={handleIneFile} onClear={clearIne} /><div aria-live="polite" className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-3 text-sm text-[var(--text-secondary)]">{ocrMessage}{progress > 0 && <span> {progress}%</span>}</div>{DEBUG && debug?.data && <DniV2DebugPanel originalUrl={debug.originalUrl} debug={debug.data} fields={ocr} />}{DEBUG && debug?.error && <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-red-300">{debug.error}</pre>}<div className="grid gap-4 sm:grid-cols-2"><label className="field">Nombre<input required name="firstName" className="field-input" placeholder="Nombre" value={ocr.firstName} onChange={(event) => setFirstName(event.target.value)} /></label><label className="field">Apellido<input required name="lastName" className="field-input" placeholder="Apellido" value={ocr.lastName} onChange={(event) => setLastName(event.target.value)} /></label></div><label className="field">Nombre visible<input required name="displayName" className="field-input" placeholder="Nombre visible" value={displayName} onChange={(event) => { setDisplayName(event.target.value); setDisplayNameManual(true); }} /></label>{displayNameManual && <button className="button button-ghost justify-self-start text-sm" type="button" onClick={() => { setDisplayNameManual(false); setDisplayName(autoDisplayName); }}>Restablecer automático</button>}{type === "police" && <label className="field">Número de placa<input name="badgeNumber" className="field-input" placeholder="Número de placa" value={badgeNumber} onChange={(event) => setBadgeNumber(event.target.value)} /></label>}{type === "police" && <BadgeOcrInput formField={false} onFile={setBadgeFile} onDetected={setBadgeNumber} />}{error && <p className="form-error" role="alert">{error}</p>}<button disabled={busy} className="button button-primary" type="submit">{busy ? "Guardando…" : "Confirmar y registrar"}</button></form>;
 }
