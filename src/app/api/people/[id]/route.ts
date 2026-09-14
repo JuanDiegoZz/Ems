@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { deletePerson, getPerson, PersonDeleteRequiresForceError, updatePerson } from "@/server/people";
+import { getDeliveryPreselection } from "@/server/deliveries";
 import { removePersonDocument, uploadPersonDocument } from "@/lib/supabase/documents";
 import { perfTimer } from "@/lib/perf";
 
@@ -7,9 +8,12 @@ function isFile(value: FormDataEntryValue | null): value is File {
   return value instanceof File && value.size > 0;
 }
 
-export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
-    return NextResponse.json(await getPerson((await context.params).id));
+    const id = (await context.params).id;
+    const deliveryType = new URL(request.url).searchParams.get("deliveryType");
+    if (deliveryType === "civil" || deliveryType === "police") return NextResponse.json(await getDeliveryPreselection(id, deliveryType));
+    return NextResponse.json(await getPerson(id));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "No encontrada" }, { status: 404 });
   }

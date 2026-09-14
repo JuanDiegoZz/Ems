@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type PersonActionsProps = { id: string; personName: string; archived: boolean; isAdmin: boolean; deliveryCount: number };
+type PersonActionsProps = { id: string; personName: string; archived: boolean; isAdmin: boolean; deliveryCount: number; showArchive?: boolean; showDelete?: boolean };
 
-export function PersonActions({ id, personName, archived, isAdmin, deliveryCount }: PersonActionsProps) {
+export function PersonActions({ id, personName, archived, isAdmin, deliveryCount, showArchive = true, showDelete = true }: PersonActionsProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -60,8 +60,8 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
   }
 
   return <div className="flex flex-wrap gap-3">
-    <button className="button button-secondary" type="button" onClick={archive} disabled={busy}>{busy ? "Procesando…" : archived ? "Restaurar" : "Archivar"}</button>
-    {isAdmin && <button className="button button-danger" type="button" onClick={openDelete} disabled={busy}>{busy ? "Procesando…" : "Eliminar definitivamente"}</button>}
+    {showArchive && <button className="button button-secondary" type="button" onClick={archive} disabled={busy}>{busy ? "Procesando…" : archived ? "Restaurar" : "Archivar"}</button>}
+    {isAdmin && showDelete && <button className="button button-danger" type="button" onClick={openDelete} disabled={busy}>{busy ? "Procesando…" : "Eliminar definitivamente"}</button>}
     {error && <p className="form-error basis-full" role="alert">{error}</p>}
     {open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div className="glass-card w-full max-w-lg" role="dialog" aria-modal="true" aria-labelledby="delete-person-title">

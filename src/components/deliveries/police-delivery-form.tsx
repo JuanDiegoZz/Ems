@@ -9,11 +9,12 @@ import { ChoiceDialog } from "@/components/ui/choice-dialog";
 import { DocumentViewer } from "@/components/documents/document-viewer";
 import { DeliveryPersonPicker } from "./delivery-person-picker";
 import { perfTimer } from "@/lib/perf";
+import { deliveryPreselectionMessage } from "@/lib/deliveries/navigation";
 
 const presets = ["5x5", "10x10", "20x20", "40x40"];
 type DailyStatus = { enabled: boolean; available: boolean; localDate: string; freeQuantity: string };
 
-export function PoliceDeliveryForm({ rpName, timeZone }: { rpName: string; timeZone: string }) {
+export function PoliceDeliveryForm({ rpName, timeZone, preselectedPersonId }: { rpName: string; timeZone: string; preselectedPersonId?: string }) {
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selected, setSelected] = useState<PersonRecord | null>(null);
@@ -27,6 +28,20 @@ export function PoliceDeliveryForm({ rpName, timeZone }: { rpName: string; timeZ
   const sequence = useRef(0);
   const submitting = useRef(false);
   const selectedId = selected?.id ?? null;
+  const [preselectLoading, setPreselectLoading] = useState(Boolean(preselectedPersonId));
+  const [preselectNotice, setPreselectNotice] = useState("");
+
+  useEffect(() => {
+    if (!preselectedPersonId) return;
+    const controller = new AbortController();
+    fetch(`/api/people/${preselectedPersonId}?deliveryType=police`, { signal: controller.signal }).then(async (response) => {
+      const data = await response.json() as { person?: PersonRecord; reason?: "archived" | "ineligible" | "not-found" };
+      if (controller.signal.aborted) return;
+      if (response.ok && data.person) setSelected(data.person);
+      else setPreselectNotice(deliveryPreselectionMessage(data.reason ?? "not-found", "police"));
+    }).catch(() => { if (!controller.signal.aborted) setPreselectNotice("No se pudo cargar la persona."); }).finally(() => { if (!controller.signal.aborted) setPreselectLoading(false); });
+    return () => controller.abort();
+  }, [preselectedPersonId]);
 
   async function loadDailyStatus(personId: string, signal?: AbortSignal) {
     const done = perfTimer("daily free kit status");
@@ -39,6 +54,7 @@ export function PoliceDeliveryForm({ rpName, timeZone }: { rpName: string; timeZ
   }
 
   useEffect(() => {
+    if (preselectLoading) return;
     const current = ++sequence.current;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -54,7 +70,7 @@ export function PoliceDeliveryForm({ rpName, timeZone }: { rpName: string; timeZ
       }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [query]);
+  }, [preselectLoading, query]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -84,7 +100,9 @@ export function PoliceDeliveryForm({ rpName, timeZone }: { rpName: string; timeZ
 
   if (status === "success" && delivery && selected) return <div className="glass-card grid gap-4 p-6"><p className="text-2xl font-bold">Entrega de Kit Policial registrada</p>{delivery.is_daily_free_kit && <p className="text-sm font-semibold text-emerald-300">Kit diario gratuito entregado.</p>}<p><strong>Atendió:</strong> {rpName}</p><p><strong>Policía:</strong> {selected.display_name}</p><p><strong>Placa:</strong> {selected.badge_number}</p><p><strong>Vendajes:</strong> {delivery.quantity_label}</p><p><strong>Fecha:</strong> {formatDateTime(delivery.occurred_at, timeZone)}</p><div className="flex flex-wrap gap-3"><button className="button button-primary" type="button" onClick={() => { setSelected(null); setDailyStatus(null); setDailyStatusLoading(false); setDelivery(null); setStatus("idle"); setQuery(""); }}>Nueva entrega</button><Link className="button button-secondary" href={`/people/${selected.id}`}>Ver policía</Link><Link className="button button-ghost" href="/history">Ir al historial</Link></div></div>;
 
-  return <><DeliveryPersonPicker
+  if (preselectLoading) return <div className="glass-card p-6 text-sm text-[var(--muted)]" aria-live="polite">Cargando persona…</div>;
+
+  return <>{preselectNotice && <p className="mb-4 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100" role="status">{preselectNotice}</p>}<DeliveryPersonPicker
     query={query}
     searchPlaceholder="Buscar por nombre o placa"
     onQueryChange={setQuery}
@@ -94,7 +112,7 @@ export function PoliceDeliveryForm({ rpName, timeZone }: { rpName: string; timeZ
     onSelect={(person) => { if (selected?.id === person.id) return; setSelected(person); setDailyStatus(null); setDailyStatusLoading(true); setDelivery(null); setMessage(""); }}
     renderPersonMeta={(person) => <>Policía · Placa {person.badge_number ?? "pendiente"}</>}
     selectedDetails={<><p className="text-sm text-[var(--muted)]">Placa: {selected?.badge_number ?? "pendiente"}</p>{dailyStatusLoading && <p className="text-sm text-[var(--muted)]">Consultando kit gratuito de hoy…</p>}{dailyStatus?.enabled && <p className={`text-sm font-semibold ${dailyStatus.available ? "text-emerald-300" : "text-amber-300"}`}>{dailyStatus.available ? "Kit gratuito de hoy disponible" : "Kit gratuito de hoy ya entregado"}</p>}<div className="flex flex-wrap gap-3">{selected?.ine_path && <DocumentViewer personId={selected.id} personName={selected.display_name} kind="ine" label="Ver INE" />}{selected?.badge_path && <DocumentViewer personId={selected.id} personName={selected.display_name} kind="badge" label="Ver placa" />}</div></>}
-    emptyState={<div className="glass-card p-5 text-sm">No encontramos a este policía. <Link className="font-semibold text-blue-300" href="/people/new?type=police&returnTo=/deliveries/police">Registrar nuevo policía</Link></div>}
+    emptyState={<div className="glass-card grid gap-3 p-5 text-sm"><p>No encontramos a {query}.</p><Link className="button button-primary w-fit" href={`/people/new?type=police&returnTo=/deliveries/police&searchHint=${encodeURIComponent(query)}`}>+ Registrar nuevo policía</Link></div>}
     selectedForm={selected && <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="grid gap-4"><fieldset><legend className="mb-2 text-sm font-semibold">Cantidad de vendajes</legend><div className="grid grid-cols-4 gap-2">{presets.map((preset) => <button className={`button ${quantity === preset ? "button-primary" : "button-secondary"}`} type="button" key={preset} onClick={() => setQuantity(preset)}>{preset}</button>)}</div><input className="field-input mt-3" value={quantity} onChange={(event) => setQuantity(event.target.value)} maxLength={32} placeholder="Personalizado, ej. 10x10" /></fieldset>{dailyStatus?.enabled && quantity !== DAILY_FREE_KIT_QUANTITY && dailyStatus.available && <p className="text-xs text-amber-200">El kit gratuito diario corresponde a 5x5.</p>}{message && <p className="text-sm text-red-300">{message}</p>}<button className="button button-primary" type="submit" disabled={status === "sending"}>{status === "sending" ? "Registrando…" : "Confirmar entrega"}</button></form>}
   /><ChoiceDialog open={Boolean(chargeWarning)} title={chargeWarning?.title ?? "Kit diario"} description={chargeWarning?.description ?? ""} options={[{ key: "continue", label: "Continuar con entrega", tone: "primary" }, { key: "cancel", label: "Cancelar", tone: "ghost" }]} onClose={() => setChargeWarning(null)} onSelect={(key) => { setChargeWarning(null); if (key === "continue") void submit(true); }} /></>;
 }

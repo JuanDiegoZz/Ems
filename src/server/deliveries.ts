@@ -3,11 +3,13 @@ import { isDeliverableCivil, isDeliverablePolice, validateCivilDelivery, type Ci
 import { createSupabaseAdminClient } from "../lib/supabase/admin.ts";
 import { dispatchDelivery } from "./discord-deliveries.ts";
 import { startOfDayInTimeZone } from "../lib/time/date.ts";
+import type { PersonRecord } from "./people.ts";
 import { DAILY_FREE_KIT_QUANTITY, getAppLocalDate } from "../lib/deliveries/daily-free-kit.ts";
 import { getDeliverySettings } from "./delivery-settings.ts";
 
 export type DeliveryRecord = { id: string; client_request_id: string; person_id: string; delivered_by: string; type: "civil" | "police"; quantity_label: string; occurred_at: string; status: "pending" | "sent" | "failed"; is_daily_free_kit?: boolean; daily_free_kit_date?: string | null; discord_message_id?: string | null; discord_error?: string | null; sent_at?: string | null };
 export type DeliveryPerson = { id: string; display_name: string; badge_number: string | null; type: "civil" | "police"; ine_path?: string | null; badge_path?: string | null };
+export type DeliveryPreselection = { person: PersonRecord | null; reason: "archived" | "ineligible" | "not-found" | null };
 export type DeliveryView = DeliveryRecord & { person: DeliveryPerson | null; profile: { id?: string; rp_name: string } | null };
 type RawRelation = Record<string, unknown> | Array<Record<string, unknown>> | null;
 type RawDelivery = DeliveryRecord & { people?: RawRelation; profiles?: RawRelation };
@@ -32,6 +34,7 @@ export async function listDeliveries(options: { q?: string; type?: string; statu
 }
 
 export async function listDeliveryOperators() { await requireActiveProfile(); const { data, error } = await createSupabaseAdminClient().from("profiles").select("id, rp_name").order("rp_name"); if (error) throw new Error("No se pudieron consultar los EMS"); return (data ?? []) as Array<{ id: string; rp_name: string }>; }
+export async function getDeliveryPreselection(id: string, type: "civil" | "police"): Promise<DeliveryPreselection> { await requireActiveProfile(); const { data, error } = await createSupabaseAdminClient().from("people").select("*").eq("id", id).maybeSingle<PersonRecord>(); if (error || !data) return { person: null, reason: "not-found" }; if (data.archived_at) return { person: null, reason: "archived" }; if (type === "civil" ? !isDeliverableCivil(data) : !isDeliverablePolice(data)) return { person: null, reason: "ineligible" }; return { person: data, reason: null }; }
 
 export async function getDelivery(id: string) { await requireActiveProfile(); const { data, error } = await createSupabaseAdminClient().from("deliveries").select("*, people(id, display_name, badge_number, type, ine_path, badge_path), profiles(id, rp_name)").eq("id", id).maybeSingle(); if (error || !data) throw new Error("Entrega no encontrada"); return normalizeDelivery(data as unknown as RawDelivery); }
 export async function listPersonDeliveries(personId: string) { await requireActiveProfile(); const { data, error } = await createSupabaseAdminClient().from("deliveries").select("id, quantity_label, occurred_at, status, is_daily_free_kit, profiles(id, rp_name)").eq("person_id", personId).order("occurred_at", { ascending: false }).limit(5); if (error) throw new Error("No se pudo consultar el historial"); return (data ?? []).map((item) => { const raw = item as unknown as { id: string; quantity_label: string; occurred_at: string; status: string; is_daily_free_kit?: boolean; profiles?: RawRelation }; const profile = relation(raw.profiles); return { id: raw.id, quantity_label: raw.quantity_label, occurred_at: raw.occurred_at, status: raw.status, is_daily_free_kit: raw.is_daily_free_kit === true, profile: profile && typeof profile.rp_name === "string" ? { rp_name: profile.rp_name } : null }; }); }

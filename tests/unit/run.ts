@@ -11,3 +11,4 @@ import "./delivery-selection.test.ts";
 import "./person-identity.test.ts";
 import "./upgrade-flow.test.ts";
 import "./daily-free-kit.test.ts";
+import "./delivery-navigation.test.ts";
