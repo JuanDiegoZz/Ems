@@ -60,8 +60,8 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
   }
 
   return <div className="flex flex-wrap gap-3">
-    <button className="button button-secondary" type="button" onClick={archive} disabled={busy}>{archived ? "Restaurar" : "Archivar"}</button>
-    {isAdmin && <button className="button button-danger" type="button" onClick={openDelete} disabled={busy}>Eliminar definitivamente</button>}
+    <button className="button button-secondary" type="button" onClick={archive} disabled={busy}>{busy ? "Procesando…" : archived ? "Restaurar" : "Archivar"}</button>
+    {isAdmin && <button className="button button-danger" type="button" onClick={openDelete} disabled={busy}>{busy ? "Procesando…" : "Eliminar definitivamente"}</button>}
     {error && <p className="form-error basis-full" role="alert">{error}</p>}
     {open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <div className="glass-card w-full max-w-lg" role="dialog" aria-modal="true" aria-labelledby="delete-person-title">
@@ -70,7 +70,7 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
         {relatedCount > 0 && <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm text-amber-100">Esta persona tiene {relatedCount} entregas registradas. La eliminación forzada también eliminará esas entregas.</p>}
         {step === 2 && <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/10 p-3 text-sm text-red-100">Confirma por segunda vez para eliminar la persona y sus entregas relacionadas.</p>}
         <label className="field mt-5">Para confirmar, escribe: <strong>{personName}</strong><input className="field-input" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} autoFocus /></label>
-        <div className="mt-5 flex justify-end gap-3"><button className="button button-secondary" type="button" onClick={() => setOpen(false)}>Cancelar</button><button className="button button-danger" type="button" disabled={busy || confirmation !== personName} onClick={deletePermanently}>{step === 2 ? "Eliminar definitivamente" : relatedCount > 0 ? "Continuar" : "Eliminar definitivamente"}</button></div>
+        <div className="mt-5 flex justify-end gap-3"><button className="button button-secondary" type="button" onClick={() => setOpen(false)} disabled={busy}>Cancelar</button><button className="button button-danger" type="button" disabled={busy || confirmation !== personName} onClick={deletePermanently}>{busy ? "Eliminando…" : step === 2 ? "Eliminar definitivamente" : relatedCount > 0 ? "Continuar" : "Eliminar definitivamente"}</button></div>
       </div>
     </div>}
   </div>;

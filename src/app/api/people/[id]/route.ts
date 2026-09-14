@@ -1,6 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { deletePerson, getPerson, PersonDeleteRequiresForceError, updatePerson } from "@/server/people";
 import { removePersonDocument, uploadPersonDocument } from "@/lib/supabase/documents";
+import { perfTimer } from "@/lib/perf";
 
 function isFile(value: FormDataEntryValue | null): value is File {
   return value instanceof File && value.size > 0;
@@ -15,6 +16,7 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const done = perfTimer("PATCH /api/people/[id]");
   try {
     const id = (await context.params).id;
     const current = await getPerson(id);
@@ -55,7 +57,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return NextResponse.json(await updatePerson(id, await request.json()));
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "No se pudo actualizar" }, { status: 400 });
-  }
+  } finally { done(); }
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {

@@ -4,6 +4,7 @@ import { classifyDuplicate } from "@/lib/people/duplicates";
 import { uploadPersonDocument, removePersonDocument } from "@/lib/supabase/documents";
 import { documentExtension } from "@/lib/people/documents";
 import { parsePeopleQuery } from "@/lib/people/pagination";
+import { perfTimer } from "@/lib/perf";
 
 type CreateStage = "request received" | "form parsed" | "input validated" | "duplicate check" | "duplicate check complete" | "document validation" | "document validation complete" | "INE upload started" | "INE upload success" | "badge upload started" | "badge upload success" | "DB operation started" | "DB success" | "response 201";
 
@@ -44,6 +45,7 @@ async function cleanupDocuments(paths: string[]) {
 }
 
 export async function GET(request: Request) {
+  const done = perfTimer("GET /api/people");
   try {
     const url = new URL(request.url);
     const query = parsePeopleQuery(url.searchParams);
@@ -53,9 +55,11 @@ export async function GET(request: Request) {
     return NextResponse.json(paginated ? result : result.items);
   }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unauthorized" }, { status: 403 }); }
+  finally { done(); }
 }
 
 export async function POST(request: Request) {
+  const done = perfTimer("POST /api/people");
   let stage: CreateStage = "request received";
   const uploadedPaths: string[] = [];
   logStage(stage);
@@ -125,5 +129,5 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Solicitud inválida" }, { status: 400 });
     }
     return errorResponse(error, stage);
-  }
+  } finally { done(); }
 }

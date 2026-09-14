@@ -11,6 +11,7 @@ import { ChoiceDialog, type ChoiceDialogOption } from "@/components/ui/choice-di
 import { getImageFromClipboardItems, validateImageFile } from "@/lib/people/clipboard";
 import { resolvePasteTarget, type PasteTarget } from "@/lib/people/paste-target";
 import { buildDisplayName } from "@/lib/people/display-name";
+import { perfTimer } from "@/lib/perf";
 
 export function PersonEditForm({ person }: { person: PersonRecord }) {
   const router = useRouter();
@@ -110,6 +111,7 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
     event.preventDefault();
     setBusy(true);
     setError("");
+    const done = perfTimer("update person");
     try {
       const form = new FormData(event.currentTarget);
       form.delete("ine");
@@ -127,6 +129,7 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
       setError("No se pudo conectar con el servidor. Intenta de nuevo.");
     } finally {
       setBusy(false);
+      done();
     }
   }
 

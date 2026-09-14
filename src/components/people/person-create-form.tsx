@@ -16,6 +16,7 @@ import { normalizePersonName } from "@/lib/normalization/person";
 import { validateSelectedIne, type PersonType } from "@/lib/people/validation";
 import { buildPersonCreateFormData, personCreateHttpMessage, postPersonCreate } from "@/lib/people/create-submit";
 import { getUpgradeDialogOptions, getUpgradeEndpoint, shouldSuppressAcceptedUpgrade, validateUpgradeFields } from "@/lib/people/upgrade-flow";
+import { perfTimer } from "@/lib/perf";
 
 const DEBUG = process.env.NEXT_PUBLIC_OCR_DEBUG === "true";
 
@@ -246,7 +247,8 @@ export function PersonCreateForm() {
       if (upgradeError) { setError(upgradeError); return; }
       setBusy(true);
       setError("");
-      try { await upgradePolice(upgradeCandidate, formElement); } finally { setBusy(false); }
+      const done = perfTimer("upgrade person to police");
+      try { await upgradePolice(upgradeCandidate, formElement); } finally { setBusy(false); done(); }
       return;
     }
     const documentError = validateSelectedIne(type, Boolean(ineFile));
@@ -254,6 +256,7 @@ export function PersonCreateForm() {
     setBusy(true);
     setError("");
     setDuplicateCheckError("");
+    const done = perfTimer("create person");
     try {
       let duplicateData: DuplicateResponse = {};
       try {
@@ -334,6 +337,7 @@ export function PersonCreateForm() {
       }
     } finally {
       setBusy(false);
+      done();
     }
   }
 

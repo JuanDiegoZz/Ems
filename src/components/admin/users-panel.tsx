@@ -32,8 +32,8 @@ function UserRow({ user, busy, onReset, onToggle }: { user: Profile; busy: boole
       <p className="mt-1 text-sm text-[var(--muted)]">@{user.username} · {user.role === "admin" ? "Administrador" : "EMS"}</p>
     </div>
     <div className="mt-4 flex flex-wrap gap-2 md:mt-0">
-      <button className="button button-secondary" type="button" disabled={busy} onClick={onReset}>Restablecer contraseña</button>
-      <button className="button button-ghost" type="button" disabled={busy} onClick={onToggle}>{user.active ? "Desactivar" : "Activar"}</button>
+      <button className="button button-secondary" type="button" disabled={busy} onClick={onReset}>{busy ? "Procesando…" : "Restablecer contraseña"}</button>
+      <button className="button button-ghost" type="button" disabled={busy} onClick={onToggle}>{busy ? "Procesando…" : user.active ? "Desactivar" : "Activar"}</button>
     </div>
   </article>;
 }

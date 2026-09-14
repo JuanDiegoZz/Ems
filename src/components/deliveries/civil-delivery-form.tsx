@@ -6,6 +6,7 @@ import type { PersonRecord } from "@/server/people";
 import { formatDate, formatDateTime } from "@/lib/time/date";
 import { DocumentViewer } from "@/components/documents/document-viewer";
 import { DeliveryPersonPicker } from "./delivery-person-picker";
+import { perfTimer } from "@/lib/perf";
 
 const presets = ["5x5", "10x10", "20x20", "40x40"];
 
@@ -18,6 +19,7 @@ export function CivilDeliveryForm({ rpName, timeZone }: { rpName: string; timeZo
   const [message, setMessage] = useState("");
   const [delivery, setDelivery] = useState<{ quantity_label: string; occurred_at: string } | null>(null);
   const sequence = useRef(0);
+  const submitting = useRef(false);
 
   useEffect(() => {
     const current = ++sequence.current;
@@ -39,13 +41,18 @@ export function CivilDeliveryForm({ rpName, timeZone }: { rpName: string; timeZo
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!selected) return;
+    if (!selected || submitting.current) return;
+    submitting.current = true;
     setStatus("sending");
     setMessage("");
-    const response = await fetch("/api/deliveries/civil", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ personId: selected.id, quantityLabel: quantity, clientRequestId: crypto.randomUUID() }) });
-    const data = await response.json();
-    if (!response.ok) { setStatus("error"); setMessage(data.error ?? "No se pudo registrar la entrega"); return; }
-    setDelivery(data); setStatus("success");
+    const done = perfTimer("confirm civil delivery");
+    try {
+      const response = await fetch("/api/deliveries/civil", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ personId: selected.id, quantityLabel: quantity, clientRequestId: crypto.randomUUID() }) });
+      const data = await response.json();
+      if (!response.ok) { setStatus("error"); setMessage(data.error ?? "No se pudo registrar la entrega"); return; }
+      setDelivery(data); setStatus("success");
+    } catch { setStatus("error"); setMessage("No se pudo conectar con el servidor. Intenta de nuevo."); }
+    finally { submitting.current = false; done(); }
   }
 
   if (status === "success" && delivery && selected) return <div className="glass-card grid gap-4 p-6"><p className="text-2xl font-bold">Entrega registrada</p><p><strong>Civil:</strong> {selected.display_name}</p><p><strong>Vendajes:</strong> {delivery.quantity_label}</p><p><strong>Atendió:</strong> {rpName}</p><p><strong>Fecha:</strong> {formatDateTime(delivery.occurred_at, timeZone)}</p><div className="flex flex-wrap gap-3"><button className="button button-primary" type="button" onClick={() => { setSelected(null); setDelivery(null); setStatus("idle"); setQuery(""); }}>Nueva entrega</button><Link className="button button-secondary" href={`/people/${selected.id}`}>Ver persona</Link><Link className="button button-ghost" href="/history">Ir al historial</Link></div></div>;
