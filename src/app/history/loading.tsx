@@ -1,0 +1,1 @@
+export default function Loading() { return <div className="grid gap-4"><div className="skeleton h-28 w-full" />{Array.from({ length: 4 }, (_, index) => <div className="skeleton h-20 w-full" key={index} />)}</div>; }

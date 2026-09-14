@@ -1,6 +1,6 @@
 ﻿import type { InputHTMLAttributes, ReactNode } from "react";
 
-export type IconName = "home" | "users" | "history" | "user" | "shield" | "heart" | "badge" | "logout" | "upload" | "search" | "file" | "plus" | "edit" | "refresh" | "check" | "alert" | "settings" | "chevron" | "clock" | "activity";
+export type IconName = "home" | "users" | "history" | "user" | "shield" | "heart" | "badge" | "logout" | "upload" | "search" | "file" | "plus" | "edit" | "refresh" | "check" | "alert" | "settings" | "chevron" | "clock" | "activity" | "package" | "more";
 
 const paths: Record<IconName, string> = {
   home: "M3 11.5 12 4l9 7.5M5.5 10v9h13v-9M9 19v-5h6v5",
@@ -23,6 +23,8 @@ const paths: Record<IconName, string> = {
   chevron: "m7 10 5 5 5-5"
   ,clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
   ,activity: "M3 12h4l3-8 4 16 3-8h4"
+  ,package: "M21 8.5 12 13 3 8.5M12 13v8M3.5 8.2 12 4l8.5 4.2v8.6L12 21l-8.5-4.2V8.2Z"
+  ,more: "M5 12h.01M12 12h.01M19 12h.01"
 };
 
 export function Icon({ name, size = 18, strokeWidth = 1.8 }: { name: IconName; size?: number; strokeWidth?: number }) { return <svg aria-hidden="true" fill="none" height={size} viewBox="0 0 24 24" width={size} xmlns="http://www.w3.org/2000/svg"><path d={paths[name]} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} /></svg>; }

@@ -13,3 +13,5 @@ import "./upgrade-flow.test.ts";
 import "./daily-free-kit.test.ts";
 import "./delivery-navigation.test.ts";
 import "./shifts.test.ts";
+import "./mobile-navigation.test.ts";
+import "./operational-staff.test.ts";

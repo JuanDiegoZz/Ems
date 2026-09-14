@@ -36,11 +36,11 @@ export function DocumentViewer({ personId, personName, kind, label }: DocumentVi
   return <>
     <button className="button button-secondary" type="button" onClick={show} disabled={status === "loading"}>{status === "loading" ? "Cargando…" : label}</button>
     {open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-      <div className="glass-card max-h-[90vh] w-full max-w-3xl overflow-auto p-4" role="dialog" aria-modal="true" aria-label={`${label}: ${personName}`}>
-        <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-lg font-bold">{label}</h2><p className="text-sm text-[var(--muted)]">{personName}</p></div><button className="button button-ghost" type="button" onClick={() => setOpen(false)}>Cerrar</button></div>
+      <div className="mobile-dialog-panel glass-card max-h-[90dvh] w-full max-w-3xl overflow-auto p-4" role="dialog" aria-modal="true" aria-label={`${label}: ${personName}`}>
+        <div className="mb-3 flex items-center justify-between gap-3"><div className="min-w-0"><h2 className="text-lg font-bold">{label}</h2><p className="truncate text-sm text-[var(--muted)]">{personName}</p></div><button className="button button-ghost shrink-0" type="button" onClick={() => setOpen(false)}>Cerrar</button></div>
         {status === "loading" && <p className="p-8 text-center text-sm text-[var(--muted)]">Cargando documento…</p>}
         {status === "error" && <p className="p-8 text-center text-sm text-red-600">No se pudo cargar el documento.</p>}
-        {url && <><img src={url} alt={`${label} de ${personName}`} className="max-h-[70vh] w-full rounded-xl bg-white object-contain" /><a className="mt-3 inline-flex text-sm text-blue-600" href={url} target="_blank" rel="noreferrer">Abrir imagen en nueva pestaña</a></>}
+        {url && <><img src={url} alt={`${label} de ${personName}`} className="max-h-[68dvh] w-full rounded-xl bg-white object-contain" /><a className="mt-3 inline-flex min-h-11 items-center text-sm text-blue-600" href={url} target="_blank" rel="noreferrer">Abrir imagen en nueva pestaña</a></>}
       </div>
     </div>}
   </>;
