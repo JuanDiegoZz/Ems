@@ -25,7 +25,7 @@ export function CivilDeliveryForm({ rpName, timeZone }: { rpName: string; timeZo
     const timer = window.setTimeout(async () => {
       setStatus("searching");
       try {
-        const response = await fetch(`/api/people?q=${encodeURIComponent(query)}&type=civil`, { signal: controller.signal });
+        const response = await fetch(`/api/people?q=${encodeURIComponent(query)}&deliveryType=civil`, { signal: controller.signal });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "No se pudo buscar");
         if (current === sequence.current) { setPeople(data as PersonRecord[]); setStatus("idle"); }

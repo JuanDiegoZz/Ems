@@ -15,6 +15,10 @@ export function validateSelectedIne(type: PersonType, hasIne: boolean): string |
   return type === "civil" && !hasIne ? "La INE es obligatoria para civiles" : null;
 }
 
+export function canChangePersonType(current: PersonType, next: PersonType) {
+  return current !== "police" || next === "police";
+}
+
 export function normalizePersonInput(input: PersonInput) {
   const firstName = input.firstName.trim().replace(/\s+/g, " ");
   const lastName = input.lastName.trim().replace(/\s+/g, " ");

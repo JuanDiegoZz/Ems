@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { readDniV2 } from "@/lib/people/dni-ocr-v2/index";
 import type { DniV2Debug, DniV2Fields } from "@/lib/people/dni-ocr-v2/debug";
@@ -15,11 +15,13 @@ import { resolvePasteTarget, type PasteTarget } from "@/lib/people/paste-target"
 import { normalizePersonName } from "@/lib/normalization/person";
 import { validateSelectedIne, type PersonType } from "@/lib/people/validation";
 import { buildPersonCreateFormData, personCreateHttpMessage, postPersonCreate } from "@/lib/people/create-submit";
+import { getUpgradeDialogOptions, getUpgradeEndpoint, shouldSuppressAcceptedUpgrade, validateUpgradeFields } from "@/lib/people/upgrade-flow";
 
 const DEBUG = process.env.NEXT_PUBLIC_OCR_DEBUG === "true";
 
 type DuplicateResponse = {
   matches?: DuplicateCandidate[];
+  archivedMatches?: DuplicateCandidate[];
   possibleMatches?: DuplicateCandidate[];
   badgeMatches?: DuplicateCandidate[];
 };
@@ -51,16 +53,20 @@ export function PersonCreateForm() {
   const [displayNameManual, setDisplayNameManual] = useState(false);
   const [badgeNumber, setBadgeNumber] = useState("");
   const [progress, setProgress] = useState(0);
-  const [ocrMessage, setOcrMessage] = useState("Selecciona una INE para rellenar los nombres automáticamente.");
+  const [ocrMessage, setOcrMessage] = useState<ReactNode>("Selecciona una INE para rellenar los nombres automáticamente.");
   const [pasteNotice, setPasteNotice] = useState("");
   const [error, setError] = useState("");
   const [duplicateCheckError, setDuplicateCheckError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  const [upgradeCandidate, setUpgradeCandidate] = useState<DuplicateCandidate | null>(null);
   const [choice, setChoice] = useState<ChoiceState | null>(null);
   const lastDuplicateSignature = useRef("");
   const duplicateRequest = useRef(0);
   const inePreviewRef = useRef("");
   const badgePreviewRef = useRef("");
+  const acceptedUpgradeIdentity = useRef("");
+  const policeFieldsRef = useRef<HTMLDivElement>(null);
   const [debug, setDebug] = useState<{ originalUrl: string; data?: DniV2Debug; error?: string } | null>(null);
 
   useEffect(() => () => {
@@ -118,16 +124,68 @@ export function PersonCreateForm() {
     return `${type}|${normalizePersonName(ocr.firstName)}|${normalizePersonName(ocr.lastName)}|${normalizePersonName(badgeNumber)}`;
   }, [badgeNumber, ocr.firstName, ocr.lastName, type]);
 
+  const upgradeIdentity = useCallback(() => `${normalizePersonName(ocr.firstName)}|${normalizePersonName(ocr.lastName)}`, [ocr.firstName, ocr.lastName]);
+
+  const acceptUpgradeCandidate = useCallback((candidate: DuplicateCandidate) => {
+    acceptedUpgradeIdentity.current = upgradeIdentity();
+    setUpgradeCandidate(candidate);
+    setOcrMessage("Persona existente vinculada. Completa la placa para continuar.");
+  }, [upgradeIdentity]);
+
+  useEffect(() => {
+    if (!upgradeCandidate) return;
+    if (acceptedUpgradeIdentity.current !== upgradeIdentity()) { setUpgradeCandidate(null); return; }
+    policeFieldsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [upgradeCandidate, upgradeIdentity]);
+
   const showDuplicate = useCallback(async (classification: ReturnType<typeof classifyDuplicate>, allowContinue: boolean) => {
     if (classification.kind === "none") return "continue";
-    const exact = classification.kind === "exact";
+    if (classification.kind === "upgrade-candidate") return askChoice(
+      "Esta persona ya está registrada",
+      `${classification.candidate.display_name} ya existe como civil. Puedes agregar sus datos policiales sin crear otro registro.`,
+      getUpgradeDialogOptions(),
+      `${candidateDetails(classification.candidate)} · La INE existente se conservará.`,
+    );
+    if (classification.kind === "badge-conflict") return askChoice(
+      "La placa ya está asociada a otra persona",
+      `La placa ${classification.candidate.badge_number ?? "ingresada"} ya está registrada en otra persona.`,
+      [{ key: "view", label: "Ver registro", tone: "primary" }, { key: "cancel", label: "Cancelar", tone: "ghost" }],
+      candidateDetails(classification.candidate),
+    );
+    if (classification.kind === "archived") return askChoice(
+      "Existe un registro archivado",
+      "La persona está archivada y no se puede actualizar automáticamente.",
+      [{ key: "cancel", label: "Cancelar", tone: "ghost" }],
+      candidateDetails(classification.candidate),
+    );
+    const duplicate = classification.kind === "duplicate";
     return askChoice(
-      exact ? (classification.candidate?.type === "police" && classification.candidate.badge_number ? "Ya existe un policía con esta placa" : "Esta persona ya está registrada") : "Encontramos una posible coincidencia",
-      exact ? "Encontramos un registro que coincide con los datos ingresados." : "Revisa este registro antes de crear uno nuevo.",
-      [{ key: "view", label: exact ? "Ver registro" : "Ver coincidencia", tone: "primary" }, ...(allowContinue ? [{ key: "continue", label: exact ? "Registrar de todos modos" : "Continuar registro", tone: "secondary" as const }] : []), { key: "cancel", label: "Cerrar", tone: "ghost" }],
+      duplicate && classification.candidate.type === "police" ? "Esta persona ya está registrada como policía" : duplicate ? "Esta persona ya está registrada" : "Encontramos una posible coincidencia",
+      duplicate ? "Puedes usar el registro existente. No se creará una segunda persona." : "Revisa este registro antes de crear uno nuevo.",
+      [{ key: "view", label: duplicate ? "Ver registro" : "Ver coincidencia", tone: "primary" }, ...(!duplicate && allowContinue ? [{ key: "continue", label: "Continuar registro", tone: "secondary" as const }] : []), { key: "cancel", label: "Cerrar", tone: "ghost" }],
       candidateDetails(classification.candidate),
     );
   }, [askChoice]);
+
+  async function upgradePolice(candidate: DuplicateCandidate, formElement: HTMLFormElement) {
+    const form = new FormData(formElement);
+    form.delete("ine");
+    form.delete("badge");
+    if (ineFile) form.set("ine", ineFile, ineFile.name);
+    if (badgeFile) form.set("badge", badgeFile, badgeFile.name);
+    setUpgrading(true);
+    try {
+      const response = await fetch(getUpgradeEndpoint(candidate.id), { method: "POST", body: form });
+      const payload = await response.json().catch(() => null) as { error?: string; person?: { id?: string } } | null;
+      if (!response.ok) { setError(payload?.error ?? "No se pudieron agregar los datos policiales."); return; }
+      const personId = payload?.person?.id ?? candidate.id;
+      router.push(`/people/${personId}?upgraded=1`);
+    } catch {
+      setError("No se pudo conectar con el servidor. Intenta de nuevo.");
+    } finally {
+      setUpgrading(false);
+    }
+  }
 
   async function handleGlobalPaste(event: ClipboardEvent<HTMLFormElement>) {
     const file = getImageFromClipboardItems(event.clipboardData.items);
@@ -162,11 +220,12 @@ export function PersonCreateForm() {
         const data = await requestDuplicates(controller.signal);
         setDuplicateCheckError("");
         if (requestId !== duplicateRequest.current) return;
-        const classification = classifyDuplicate({ matches: data.matches ?? [], possibleMatches: data.possibleMatches ?? [], badgeMatches: data.badgeMatches ?? [] });
-        if (classification.kind === "none" || signature === lastDuplicateSignature.current) return;
+        const classification = classifyDuplicate({ type, matches: data.matches ?? [], archivedMatches: data.archivedMatches ?? [], possibleMatches: data.possibleMatches ?? [], badgeMatches: data.badgeMatches ?? [] });
+        if (classification.kind === "none" || signature === lastDuplicateSignature.current || shouldSuppressAcceptedUpgrade(classification.candidate?.id ?? null, upgradeIdentity(), upgradeCandidate?.id ?? null, acceptedUpgradeIdentity.current)) return;
         lastDuplicateSignature.current = signature;
         const result = await showDuplicate(classification, true);
         if (result === "view" && classification.candidate) router.push(`/people/${classification.candidate.id}`);
+        if (result === "upgrade" && classification.kind === "upgrade-candidate") acceptUpgradeCandidate(classification.candidate);
       } catch (caught) {
         if (caught instanceof Error && caught.name === "AbortError") return;
         if (caught instanceof DuplicateCheckHttpError) {
@@ -177,11 +236,19 @@ export function PersonCreateForm() {
       }
     }, 500);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [ocr.firstName, ocr.lastName, badgeNumber, type, displayName, duplicateSignature, requestDuplicates, router, showDuplicate]);
+  }, [acceptUpgradeCandidate, ocr.firstName, ocr.lastName, badgeNumber, type, displayName, duplicateSignature, requestDuplicates, router, showDuplicate, upgradeCandidate?.id, upgradeIdentity]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formElement = event.currentTarget;
+    if (upgradeCandidate) {
+      const upgradeError = validateUpgradeFields(badgeNumber, badgeFile instanceof File);
+      if (upgradeError) { setError(upgradeError); return; }
+      setBusy(true);
+      setError("");
+      try { await upgradePolice(upgradeCandidate, formElement); } finally { setBusy(false); }
+      return;
+    }
     const documentError = validateSelectedIne(type, Boolean(ineFile));
     if (documentError) { setError(documentError); return; }
     setBusy(true);
@@ -200,11 +267,12 @@ export function PersonCreateForm() {
         }
         return;
       }
-      const classification = classifyDuplicate({ matches: duplicateData.matches ?? [], possibleMatches: duplicateData.possibleMatches ?? [], badgeMatches: duplicateData.badgeMatches ?? [] });
+      const classification = classifyDuplicate({ type, matches: duplicateData.matches ?? [], archivedMatches: duplicateData.archivedMatches ?? [], possibleMatches: duplicateData.possibleMatches ?? [], badgeMatches: duplicateData.badgeMatches ?? [] });
       let confirmDuplicates = false;
       if (classification.kind !== "none") {
         const result = await showDuplicate(classification, true);
         if (result === "view" && classification.candidate) { router.push(`/people/${classification.candidate.id}`); return; }
+        if (result === "upgrade" && classification.kind === "upgrade-candidate") { acceptUpgradeCandidate(classification.candidate); return; }
         if (result !== "continue") return;
         confirmDuplicates = true;
       }
@@ -237,10 +305,11 @@ export function PersonCreateForm() {
       if (result.response.status === 409) {
         const payload = result.payload as (DuplicateResponse & { duplicates?: DuplicateResponse }) | null;
         const duplicatePayload = payload?.duplicates ?? payload;
-        const serverClassification = classifyDuplicate({ matches: duplicatePayload?.matches ?? [], possibleMatches: duplicatePayload?.possibleMatches ?? [], badgeMatches: duplicatePayload?.badgeMatches ?? [] });
+        const serverClassification = classifyDuplicate({ type, matches: duplicatePayload?.matches ?? [], archivedMatches: duplicatePayload?.archivedMatches ?? [], possibleMatches: duplicatePayload?.possibleMatches ?? [], badgeMatches: duplicatePayload?.badgeMatches ?? [] });
         if (serverClassification.kind === "none") { setError(personCreateHttpMessage(result.response.status, result.payload)); return; }
         const choiceResult = await showDuplicate(serverClassification, true);
         if (choiceResult === "view" && serverClassification.candidate) { router.push(`/people/${serverClassification.candidate.id}`); return; }
+        if (choiceResult === "upgrade" && serverClassification.kind === "upgrade-candidate") { acceptUpgradeCandidate(serverClassification.candidate); return; }
         if (choiceResult !== "continue") return;
         form.set("confirmDuplicates", "yes");
         result = await postPersonCreate(form);
@@ -317,5 +386,5 @@ export function PersonCreateForm() {
   }
 
   const autoDisplayName = buildDisplayName(ocr.firstName, ocr.lastName);
-  return <form onSubmit={submit} onPaste={handleGlobalPaste} className="glass-card grid gap-5 p-6"><label className="field">Tipo de persona<select name="type" className="field-input" value={type} onChange={(event) => setType(event.target.value as PersonType)}><option value="civil">Civil</option><option value="police">Policía</option></select></label>{type === "police" && <p className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 text-sm text-[var(--text-secondary)]">Puedes registrar al policía con INE, placa o ambos. Luego podrás completar la información faltante.</p>}<UploadDropzone name="ine" label="Subir INE" pasteTarget="ine" onActivate={setActivePasteTarget} formField={false} allowRemove file={ineFile} previewUrl={inePreviewUrl} onFile={handleIneFile} onClear={clearIne} /><div aria-live="polite" className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-3 text-sm text-[var(--text-secondary)]">{ocrMessage}{progress > 0 && <span> {progress}%</span>}</div>{pasteNotice && <p className="text-sm text-emerald-300" role="status">{pasteNotice}</p>}{DEBUG && debug?.data && <DniV2DebugPanel originalUrl={debug.originalUrl} debug={debug.data} fields={ocr} />}{DEBUG && debug?.error && <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-red-300">{debug.error}</pre>}<div className="grid gap-4 sm:grid-cols-2"><label className="field">Nombre<input required name="firstName" className="field-input" placeholder="Nombre" value={ocr.firstName} onChange={(event) => setFirstName(event.target.value)} /></label><label className="field">Apellido<input required name="lastName" className="field-input" placeholder="Apellido" value={ocr.lastName} onChange={(event) => setLastName(event.target.value)} /></label></div><label className="field">Nombre visible<input required name="displayName" className="field-input" placeholder="Nombre visible" value={displayName} onChange={(event) => { setDisplayName(event.target.value); setDisplayNameManual(true); }} /></label>{displayNameManual && <button className="button button-ghost justify-self-start text-sm" type="button" onClick={() => { setDisplayNameManual(false); setDisplayName(autoDisplayName); }}>Restablecer automático</button>}{type === "police" && <label className="field">Número de placa<input name="badgeNumber" className="field-input" placeholder="Número de placa" value={badgeNumber} onChange={(event) => setBadgeNumber(event.target.value)} /></label>}{type === "police" && <BadgeOcrInput formField={false} file={badgeFile} previewUrl={badgePreviewUrl} onActivate={setActivePasteTarget} onFile={handleBadgeFile} onDetected={setBadgeNumber} />}{duplicateCheckError && <p className="text-sm text-amber-300" role="status">No se pudo comprobar duplicados automáticamente: {duplicateCheckError}</p>}{error && <p className="form-error" role="alert">{error}</p>}<button disabled={busy} className="button button-primary" type="submit">{busy ? "Guardando…" : "Confirmar y registrar"}</button><ChoiceDialog open={Boolean(choice)} title={choice?.title ?? ""} description={choice?.description ?? ""} details={choice?.details} options={choice?.options ?? []} onSelect={(value) => { const resolver = choice?.resolve; setChoice(null); resolver?.(value); }} onClose={() => { const resolver = choice?.resolve; setChoice(null); resolver?.("cancel"); }} /></form>;
+  return <form onSubmit={submit} onPaste={handleGlobalPaste} className="glass-card grid gap-5 p-6"><label className="field">Tipo de persona<select name="type" className="field-input" value={type} onChange={(event) => { const nextType = event.target.value as PersonType; setType(nextType); if (nextType !== "police") setUpgradeCandidate(null); }}><option value="civil">Civil</option><option value="police">Policía</option></select></label>{type === "police" && <p className="rounded-xl border border-blue-400/20 bg-blue-400/5 p-3 text-sm text-[var(--text-secondary)]">Puedes registrar al policía con INE, placa o ambos. Luego podrás completar la información faltante.</p>}<UploadDropzone name="ine" label="Subir INE" pasteTarget="ine" onActivate={setActivePasteTarget} formField={false} allowRemove file={ineFile} previewUrl={inePreviewUrl} onFile={handleIneFile} onClear={clearIne} /><div aria-live="polite" className="rounded-xl border border-cyan-400/15 bg-cyan-400/5 p-3 text-sm text-[var(--text-secondary)]">{ocrMessage}{progress > 0 && <span> {progress}%</span>}</div>{pasteNotice && <p className="text-sm text-emerald-300" role="status">{pasteNotice}</p>}{DEBUG && debug?.data && <DniV2DebugPanel originalUrl={debug.originalUrl} debug={debug.data} fields={ocr} />}{DEBUG && debug?.error && <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-red-300">{debug.error}</pre>}<div className="grid gap-4 sm:grid-cols-2"><label className="field">Nombre<input required name="firstName" className="field-input" placeholder="Nombre" value={ocr.firstName} onChange={(event) => setFirstName(event.target.value)} /></label><label className="field">Apellido<input required name="lastName" className="field-input" placeholder="Apellido" value={ocr.lastName} onChange={(event) => setLastName(event.target.value)} /></label></div><label className="field">Nombre visible<input required name="displayName" className="field-input" placeholder="Nombre visible" value={displayName} onChange={(event) => { setDisplayName(event.target.value); setDisplayNameManual(true); }} /></label>{displayNameManual && <button className="button button-ghost justify-self-start text-sm" type="button" onClick={() => { setDisplayNameManual(false); setDisplayName(autoDisplayName); }}>Restablecer automático</button>}{upgradeCandidate && <div ref={policeFieldsRef} className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4"><p className="font-semibold text-emerald-300">✓ Persona existente</p><p className="mt-2 text-lg font-bold">{upgradeCandidate.display_name}</p><p className="text-sm text-[var(--text-secondary)]">Actualmente: Civil</p><p className="mt-3 text-sm text-[var(--text-secondary)]">La INE existente se conservará. Agrega su placa para convertirla en Policía.</p><div className="mt-3 flex flex-wrap gap-3"><button className="button button-secondary" type="button" onClick={() => router.push(`/people/${upgradeCandidate.id}`)}>Ver registro</button><button className="button button-ghost" type="button" onClick={() => { setUpgradeCandidate(null); acceptedUpgradeIdentity.current = ""; }}>Cancelar vinculación</button></div></div>}{type === "police" && <label className="field">Número de placa<input name="badgeNumber" className="field-input" placeholder="Número de placa" value={badgeNumber} onChange={(event) => setBadgeNumber(event.target.value)} /></label>}{type === "police" && <BadgeOcrInput formField={false} file={badgeFile} previewUrl={badgePreviewUrl} onActivate={setActivePasteTarget} onFile={handleBadgeFile} onDetected={setBadgeNumber} />}{duplicateCheckError && <p className="text-sm text-amber-300" role="status">No se pudo comprobar duplicados automáticamente: {duplicateCheckError}</p>}{error && <p className="form-error" role="alert">{error}</p>}<button disabled={busy} className="button button-primary" type="submit">{busy ? (upgrading ? "Agregando datos policiales…" : "Guardando…") : upgradeCandidate ? "Agregar datos policiales" : "Confirmar y registrar"}</button><ChoiceDialog open={Boolean(choice)} title={choice?.title ?? ""} description={choice?.description ?? ""} details={choice?.details} options={choice?.options ?? []} onSelect={(value) => { const resolver = choice?.resolve; setChoice(null); resolver?.(value); }} onClose={() => { const resolver = choice?.resolve; setChoice(null); resolver?.("cancel"); }} /></form>;
 }

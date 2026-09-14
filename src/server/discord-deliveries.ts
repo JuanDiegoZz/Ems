@@ -24,7 +24,7 @@ export async function dispatchDelivery(deliveryId: string) {
       if (!person.data.badge_number || !person.data.badge_path) throw new Error("documento de placa no encontrado");
       const badge = await client.storage.from("rp-documents").download(person.data.badge_path); if (badge.error || !badge.data) throw new Error("fallo al descargar placa");
       const badgeType = badge.data.type || "image/jpeg"; attachments.push({ blob: badge.data, contentType: badgeType, filename: `placa-${safeName(person.data.badge_number)}.${badgeType.split("/")[1] || "jpg"}` });
-      content = buildPoliceContent(profile.data.rp_name, person.data.badge_number, formatDiscordDate(delivery.occurred_at), delivery.quantity_label);
+      content = buildPoliceContent(profile.data.rp_name, person.data.badge_number, formatDiscordDate(delivery.occurred_at), delivery.quantity_label, delivery.is_daily_free_kit === true);
     } else content = buildCivilContent(profile.data.rp_name, person.data.display_name, formatDiscordDate(delivery.occurred_at), delivery.quantity_label);
     const result = await sendDiscordWebhook({ webhookUrl: webhook, content, attachments });
     const update = await client.from("deliveries").update({ status: "sent", discord_message_id: result.messageId, discord_error: null, sent_at: new Date().toISOString() }).eq("id", delivery.id).select("*").single<DeliveryRecord>();

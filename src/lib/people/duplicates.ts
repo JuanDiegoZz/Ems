@@ -1,7 +1,13 @@
 import { normalizePersonName } from "../normalization/person.ts";
 
-export type DuplicateCandidate = { id: string; display_name: string; type: "civil" | "police"; badge_number: string | null };
-export type DuplicateClassification = { kind: "exact" | "possible" | "none"; candidate?: DuplicateCandidate };
+export type DuplicateCandidate = { id: string; display_name: string; type: "civil" | "police"; badge_number: string | null; archived_at?: string | null };
+export type DuplicateClassification =
+  | { kind: "none" }
+  | { kind: "possible"; candidate: DuplicateCandidate }
+  | { kind: "duplicate"; candidate: DuplicateCandidate }
+  | { kind: "upgrade-candidate"; candidate: DuplicateCandidate }
+  | { kind: "badge-conflict"; candidate: DuplicateCandidate }
+  | { kind: "archived"; candidate: DuplicateCandidate };
 
 export type DuplicateLookup = Readonly<{
   type: "civil" | "police";
@@ -58,9 +64,13 @@ export function duplicateCheckMessage(status: number, payload: unknown): string 
   return `No se pudo comprobar duplicados (HTTP ${status}).`;
 }
 
-export function classifyDuplicate(input: { matches: readonly DuplicateCandidate[]; possibleMatches: readonly DuplicateCandidate[]; badgeMatches: readonly DuplicateCandidate[] }): DuplicateClassification {
-  const candidate = input.badgeMatches[0] ?? input.matches[0];
-  if (candidate) return { kind: "exact", candidate };
+export function classifyDuplicate(input: { type?: "civil" | "police"; matches: readonly DuplicateCandidate[]; archivedMatches?: readonly DuplicateCandidate[]; possibleMatches: readonly DuplicateCandidate[]; badgeMatches: readonly DuplicateCandidate[] }): DuplicateClassification {
+  const exact = input.matches[0];
+  const badge = input.badgeMatches[0];
+  if (badge && (!exact || badge.id !== exact.id)) return { kind: "badge-conflict", candidate: badge };
+  if (exact && input.type === "police" && exact.type === "civil") return { kind: "upgrade-candidate", candidate: exact };
+  if (exact) return { kind: "duplicate", candidate: exact };
+  if (input.archivedMatches?.[0]) return { kind: "archived", candidate: input.archivedMatches[0] };
   if (input.possibleMatches[0]) return { kind: "possible", candidate: input.possibleMatches[0] };
   return { kind: "none" };
 }

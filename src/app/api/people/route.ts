@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createPerson, findPersonDuplicates, listPeople } from "@/server/people";
+import { classifyDuplicate } from "@/lib/people/duplicates";
 import { uploadPersonDocument, removePersonDocument } from "@/lib/supabase/documents";
 import { documentExtension } from "@/lib/people/documents";
 import { parsePeopleQuery } from "@/lib/people/pagination";
@@ -47,7 +48,8 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const query = parsePeopleQuery(url.searchParams);
     const paginated = url.searchParams.has("page") || url.searchParams.has("pageSize");
-    const result = await listPeople({ ...query, pageSize: paginated ? query.pageSize : 50 });
+    const deliveryType = url.searchParams.get("deliveryType");
+    const result = await listPeople({ ...query, deliveryType: deliveryType === "civil" || deliveryType === "police" ? deliveryType : undefined, pageSize: paginated ? query.pageSize : 50 });
     return NextResponse.json(paginated ? result : result.items);
   }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unauthorized" }, { status: 403 }); }
@@ -81,7 +83,8 @@ export async function POST(request: Request) {
     const duplicate = await findPersonDuplicates({ type, firstName, lastName, displayName, badgeNumber });
     stage = "duplicate check complete";
     logStage(stage);
-    if ((duplicate.matches.length || duplicate.badgeMatch) && form.get("confirmDuplicates") !== "yes") return NextResponse.json({ error: "Posible duplicado detectado", duplicates: duplicate }, { status: 409 });
+    const duplicateDecision = classifyDuplicate({ type, matches: duplicate.matches, archivedMatches: duplicate.archivedMatches, possibleMatches: duplicate.possibleMatches, badgeMatches: duplicate.badgeMatches });
+    if (duplicateDecision.kind !== "none" && (duplicateDecision.kind !== "possible" || form.get("confirmDuplicates") !== "yes")) return NextResponse.json({ error: "Esta persona ya está registrada.", duplicates: duplicate }, { status: 409 });
 
     stage = "document validation";
     if (hasIne) documentExtension(ine as File);

@@ -4,7 +4,7 @@ export type DiscordSendInput = { webhookUrl: string; content: string; attachment
 import { formatDate } from "../time/date.ts";
 export function formatDiscordDate(value: string | Date) { return formatDate(value); }
 export function buildCivilContent(rpName: string, personName: string, date: string, quantity: string) { return `**Entrega de Kit Civil**\n| Atendio: ${rpName}\n| Nombre del civil: ${personName}\n| Fecha de Entrega: ${date}\n| Cantidad de vendajes: ${quantity}`; }
-export function buildPoliceContent(rpName: string, badge: string, date: string, quantity: string) { return `**Entrega de Kit Policial**\n| Atendio: ${rpName}\n| Placa: ${badge}\n| Fecha de Entrega: ${date}\n| Cantidad de vendajes: ${quantity}`; }
+export function buildPoliceContent(rpName: string, badge: string, date: string, quantity: string, isDailyFreeKit = false) { return `**Entrega de Kit Policial**\n| Atendio: ${rpName}\n| Placa: ${badge}\n| Fecha de Entrega: ${date}\n| Cantidad de vendajes: ${quantity}${isDailyFreeKit ? "\n| Kit diario: Gratuito" : ""}`; }
 export function webhookForType(type: "civil" | "police") { return type === "civil" ? process.env.DISCORD_WEBHOOK_CIVIL : process.env.DISCORD_WEBHOOK_POLICE; }
 
 export async function sendDiscordWebhook({ webhookUrl, content, attachments }: DiscordSendInput) {

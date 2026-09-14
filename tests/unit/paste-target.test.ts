@@ -25,14 +25,14 @@ test("an explicitly active police target wins over inferred state", () => {
 
 const candidate = { id: "person-1", display_name: "Manolo Durango", type: "civil" as const, badge_number: null };
 
-test("duplicate classification distinguishes exact, possible and none", () => {
-  assert.equal(classifyDuplicate({ matches: [candidate], possibleMatches: [], badgeMatches: [] }).kind, "exact");
+test("duplicate classification distinguishes duplicate, possible and none", () => {
+  assert.equal(classifyDuplicate({ matches: [candidate], possibleMatches: [], badgeMatches: [] }).kind, "duplicate");
   assert.equal(classifyDuplicate({ matches: [], possibleMatches: [candidate], badgeMatches: [] }).kind, "possible");
   assert.equal(classifyDuplicate({ matches: [], possibleMatches: [], badgeMatches: [] }).kind, "none");
 });
 
-test("an exact badge match is classified as exact", () => {
-  assert.equal(classifyDuplicate({ matches: [], possibleMatches: [], badgeMatches: [ { ...candidate, type: "police", badge_number: "0626" } ] }).kind, "exact");
+test("an exact badge match is classified as a badge conflict", () => {
+  assert.equal(classifyDuplicate({ matches: [], possibleMatches: [], badgeMatches: [ { ...candidate, type: "police", badge_number: "0626" } ] }).kind, "badge-conflict");
 });
 
 test("HTTP 400 duplicate checks are not reported as network failures", () => {

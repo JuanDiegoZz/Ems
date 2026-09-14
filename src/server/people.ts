@@ -1,11 +1,12 @@
 ﻿import { requireActiveProfile, requireAdmin } from "../lib/auth/session.ts";
-import { normalizePersonInput, type PersonInput } from "../lib/people/validation.ts";
+import { canChangePersonType, normalizePersonInput, type PersonInput } from "../lib/people/validation.ts";
 import { createSupabaseAdminClient } from "../lib/supabase/admin.ts";
 import { normalizePersonName } from "../lib/normalization/person.ts";
 import { rankPeople } from "../lib/people/search.ts";
 import { canHardDelete } from "../lib/people/delete-policy.ts";
 import { normalizeDuplicateLookupInput, type DuplicateCandidate } from "../lib/people/duplicates.ts";
 import { getPeoplePageMeta, normalizePeoplePage, normalizePeoplePageSize, PEOPLE_PAGE_SIZE } from "../lib/people/pagination.ts";
+import { planPoliceUpgrade } from "../lib/people/police-upgrade.ts";
 
 export type PersonRecord = { id: string; type: "civil" | "police"; first_name: string; last_name: string; display_name: string; search_name: string; badge_number: string | null; ine_path: string | null; badge_path: string | null; created_by: string; created_at: string; updated_at: string; archived_at: string | null };
 
@@ -13,6 +14,13 @@ export class PersonDeleteRequiresForceError extends Error {
   constructor(public readonly deliveryCount: number) {
     super("La persona tiene entregas relacionadas");
     this.name = "PersonDeleteRequiresForceError";
+  }
+}
+
+export class PoliceUpgradeError extends Error {
+  constructor(public readonly code: "not-found" | "archived" | "already-police" | "badge-conflict" | "changed") {
+    super(code);
+    this.name = "PoliceUpgradeError";
   }
 }
 
@@ -26,7 +34,7 @@ export type PeoplePage = {
   totalPages: number;
 };
 
-export async function listPeople(options: { q?: string; search?: string; type?: string; includeArchived?: boolean; page?: number; pageSize?: number; limit?: number; offset?: number } = {}): Promise<PeoplePage> {
+export async function listPeople(options: { q?: string; search?: string; type?: string; deliveryType?: "civil" | "police"; includeArchived?: boolean; page?: number; pageSize?: number; limit?: number; offset?: number } = {}): Promise<PeoplePage> {
   const profile = await requireActiveProfile();
   const pageSize = normalizePeoplePageSize(options.pageSize ?? options.limit ?? PEOPLE_PAGE_SIZE);
   const page = normalizePeoplePage(options.page ?? (options.offset === undefined ? 1 : Math.floor(Math.max(options.offset, 0) / pageSize) + 1));
@@ -34,10 +42,12 @@ export async function listPeople(options: { q?: string; search?: string; type?: 
   let query = client.from("people").select("*", { count: "exact" }).order("created_at", { ascending: false });
   if (!options.includeArchived || profile.role !== "admin") query = query.is("archived_at", null);
   if (options.type === "civil" || options.type === "police") query = query.eq("type", options.type);
+  if (options.deliveryType === "civil") query = query.not("ine_path", "is", null);
+  if (options.deliveryType === "police") query = query.eq("type", "police").not("ine_path", "is", null).not("badge_number", "is", null).not("badge_path", "is", null);
   const term = safeTerm(normalizePersonName(options.search ?? options.q ?? ""));
   if (term) {
     const pattern = `%${term.slice(0, Math.min(3, term.length))}%`;
-    query = options.type === "civil" ? query.ilike("search_name", pattern) : query.or(`search_name.ilike.${pattern},badge_number.ilike.${pattern}`);
+    query = options.type === "civil" || options.deliveryType === "civil" ? query.ilike("search_name", pattern) : query.or(`search_name.ilike.${pattern},badge_number.ilike.${pattern}`);
   }
   const load = async (targetPage: number) => {
     const { data, count, error } = await query.range((targetPage - 1) * pageSize, targetPage * pageSize - 1);
@@ -55,15 +65,18 @@ export async function findPersonDuplicates(input: unknown) {
   await requireActiveProfile();
   const normalized = normalizeDuplicateLookupInput(input);
   const client = createSupabaseAdminClient();
-  const fields = "id, display_name, type, badge_number, search_name";
+  const fields = "id, display_name, type, badge_number, search_name, archived_at";
   const names = normalized.searchName
     ? await client.from("people").select(fields).eq("search_name", normalized.searchName).is("archived_at", null).limit(10)
+    : { data: [], error: null };
+  const archivedNames = normalized.searchName
+    ? await client.from("people").select(fields).eq("search_name", normalized.searchName).not("archived_at", "is", null).limit(10)
     : { data: [], error: null };
   const prefix = normalized.searchName.slice(0, Math.min(3, normalized.searchName.length));
   const possible = prefix
     ? await client.from("people").select(fields).ilike("search_name", `%${safeTerm(prefix)}%`).is("archived_at", null).limit(100)
     : { data: [], error: null };
-  if (names.error || possible.error) throw new Error("No se pudo comprobar duplicados");
+  if (names.error || archivedNames.error || possible.error) throw new Error("No se pudo comprobar duplicados");
   const possibleMatches = normalized.searchName
     ? rankPeople((possible.data ?? []) as PersonRecord[], normalized.searchName).filter((person) => person.search_name !== normalized.searchName).slice(0, 5)
     : [];
@@ -75,7 +88,37 @@ export async function findPersonDuplicates(input: unknown) {
     badgeMatch = Boolean(result.data);
     badgeMatches = result.data ? [result.data] : [];
   }
-  return { matches: (names.data ?? []) as DuplicateCandidate[], possibleMatches, badgeMatch, badgeMatches };
+  return { matches: (names.data ?? []) as DuplicateCandidate[], archivedMatches: (archivedNames.data ?? []) as DuplicateCandidate[], possibleMatches, badgeMatch, badgeMatches };
+}
+
+export async function getPersonForPoliceUpgrade(id: string) {
+  await requireActiveProfile();
+  const { data, error } = await createSupabaseAdminClient().from("people").select("*").eq("id", id).maybeSingle<PersonRecord>();
+  if (error || !data) throw new PoliceUpgradeError("not-found");
+  if (data.archived_at) throw new PoliceUpgradeError("archived");
+  if (data.type !== "civil") throw new PoliceUpgradeError("already-police");
+  return data;
+}
+
+export async function assertPoliceBadgeAvailable(badgeNumber: string, excludingPersonId: string) {
+  if (!badgeNumber) return;
+  await requireActiveProfile();
+  const { data: badgeOwner, error } = await createSupabaseAdminClient().from("people").select("id").eq("badge_number", badgeNumber).eq("type", "police").is("archived_at", null).neq("id", excludingPersonId).maybeSingle();
+  if (error) throw new Error("No se pudo comprobar la placa");
+  if (badgeOwner) throw new PoliceUpgradeError("badge-conflict");
+}
+
+export async function promoteCivilToPolice(id: string, input: { badgeNumber?: string; inePath?: string | null; badgePath?: string | null }) {
+  await requireActiveProfile();
+  const current = await getPersonForPoliceUpgrade(id);
+  const plan = planPoliceUpgrade(current, input);
+  const client = createSupabaseAdminClient();
+  await assertPoliceBadgeAvailable(plan.badgeNumber ?? "", id);
+  const { data, error } = await client.from("people").update({ type: plan.type, badge_number: plan.badgeNumber, ine_path: plan.inePath, badge_path: plan.badgePath, updated_at: new Date().toISOString() }).eq("id", id).eq("type", "civil").is("archived_at", null).select("*").maybeSingle<PersonRecord>();
+  if (error?.code === "23505") throw new PoliceUpgradeError("badge-conflict");
+  if (error) throw new Error("No se pudieron agregar los datos policiales");
+  if (!data) throw new PoliceUpgradeError("changed");
+  return data;
 }
 
 export async function getPerson(id: string, includeArchived = false) {
@@ -96,7 +139,11 @@ export async function createPerson(input: PersonInput, id = crypto.randomUUID())
 export async function updatePerson(id: string, input: PersonInput) {
   await requireActiveProfile();
   const normalized = normalizePersonInput(input);
-  const { data, error } = await createSupabaseAdminClient().from("people").update({ type: normalized.type, first_name: normalized.firstName, last_name: normalized.lastName, display_name: normalized.displayName, search_name: normalized.searchName, badge_number: normalized.badgeNumber, ine_path: normalized.inePath, badge_path: normalized.badgePath, updated_at: new Date().toISOString() }).eq("id", id).select("*").single<PersonRecord>();
+  const client = createSupabaseAdminClient();
+  const { data: current, error: currentError } = await client.from("people").select("type").eq("id", id).maybeSingle<{ type: "civil" | "police" }>();
+  if (currentError || !current) throw new Error("Persona no encontrada");
+  if (!canChangePersonType(current.type, normalized.type)) throw new Error("No se puede cambiar una persona policía a civil");
+  const { data, error } = await client.from("people").update({ type: normalized.type, first_name: normalized.firstName, last_name: normalized.lastName, display_name: normalized.displayName, search_name: normalized.searchName, badge_number: normalized.badgeNumber, ine_path: normalized.inePath, badge_path: normalized.badgePath, updated_at: new Date().toISOString() }).eq("id", id).select("*").single<PersonRecord>();
   if (error || !data) throw new Error(error?.code === "23505" ? "El número de placa ya está activo" : "No se pudo actualizar la persona");
   return data;
 }

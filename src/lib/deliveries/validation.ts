@@ -11,6 +11,7 @@ export function validateCivilDelivery(input: CivilDeliveryInput) {
 }
 
 export const validatePoliceDelivery = validateCivilDelivery;
+export function isDeliverableCivil(person: { archived_at: string | null; ine_path: string | null }) { return !person.archived_at && Boolean(person.ine_path); }
 export function isDeliverablePolice(person: { type: "civil" | "police"; archived_at: string | null; badge_number: string | null; ine_path: string | null; badge_path: string | null }) { return person.type === "police" && !person.archived_at && Boolean(person.badge_number && person.ine_path && person.badge_path); }
 
 

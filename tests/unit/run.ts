@@ -8,3 +8,6 @@ import "./paste-target.test.ts";
 import "./people-create-submit.test.ts";
 import "./people-pagination.test.ts";
 import "./delivery-selection.test.ts";
+import "./person-identity.test.ts";
+import "./upgrade-flow.test.ts";
+import "./daily-free-kit.test.ts";
