@@ -12,3 +12,4 @@ import "./person-identity.test.ts";
 import "./upgrade-flow.test.ts";
 import "./daily-free-kit.test.ts";
 import "./delivery-navigation.test.ts";
+import "./shifts.test.ts";

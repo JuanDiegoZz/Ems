@@ -1,6 +1,6 @@
 ﻿import type { InputHTMLAttributes, ReactNode } from "react";
 
-export type IconName = "home" | "users" | "history" | "user" | "shield" | "heart" | "badge" | "logout" | "upload" | "search" | "file" | "plus" | "edit" | "refresh" | "check" | "alert" | "settings" | "chevron";
+export type IconName = "home" | "users" | "history" | "user" | "shield" | "heart" | "badge" | "logout" | "upload" | "search" | "file" | "plus" | "edit" | "refresh" | "check" | "alert" | "settings" | "chevron" | "clock" | "activity";
 
 const paths: Record<IconName, string> = {
   home: "M3 11.5 12 4l9 7.5M5.5 10v9h13v-9M9 19v-5h6v5",
@@ -21,6 +21,8 @@ const paths: Record<IconName, string> = {
   alert: "M12 4 3 20h18L12 4ZM12 10v4M12 17h.01",
   settings: "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.7 1.7-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V20h-2.4v-.2a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1L8 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H6v-2.4h.9a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9L8 8.6l1.7-1.7.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V5h2.4v.8a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.7 1.7-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1V14h-.1a1.7 1.7 0 0 0-1.4 1Z",
   chevron: "m7 10 5 5 5-5"
+  ,clock: "M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+  ,activity: "M3 12h4l3-8 4 16 3-8h4"
 };
 
 export function Icon({ name, size = 18, strokeWidth = 1.8 }: { name: IconName; size?: number; strokeWidth?: number }) { return <svg aria-hidden="true" fill="none" height={size} viewBox="0 0 24 24" width={size} xmlns="http://www.w3.org/2000/svg"><path d={paths[name]} stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth={strokeWidth} /></svg>; }

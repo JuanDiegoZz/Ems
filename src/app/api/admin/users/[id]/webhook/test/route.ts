@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";
+import { testWebhook, WebhookConfigurationError } from "@/server/shifts";
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) { const body = await request.json().catch(() => null); try { return NextResponse.json(await testWebhook((await params).id, body?.webhookUrl)); } catch (error) { return NextResponse.json({ error: error instanceof WebhookConfigurationError ? error.message : error instanceof Error ? error.message : "No se pudo probar el webhook" }, { status: error instanceof WebhookConfigurationError ? 400 : 502 }); } }

@@ -5,7 +5,7 @@ import { useState } from "react";
 import type { Profile } from "@/lib/auth/types";
 import { Icon } from "@/components/ui";
 
-type Mode = "create" | "reset" | null;
+type Mode = "create" | "reset" | "webhook" | null;
 type Notice = { tone: "success" | "error"; text: string } | null;
 
 type UserModalProps = {
@@ -22,24 +22,25 @@ async function assertOk(response: Response) {
   if (!response.ok) throw new Error(body?.error ?? "No se pudo completar la acción");
 }
 
-function UserRow({ user, busy, onReset, onToggle }: { user: Profile; busy: boolean; onReset: () => void; onToggle: () => void }) {
+function UserRow({ user, busy, configured, onReset, onToggle, onWebhook }: { user: Profile; busy: boolean; configured: boolean; onReset: () => void; onToggle: () => void; onWebhook: () => void }) {
   return <article className="glass-card card-interactive p-5 md:grid md:grid-cols-[1fr_auto] md:items-center">
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="font-semibold text-[var(--text)]">{user.rp_name}</h2>
         <span className={`badge ${user.active ? "badge-success" : "badge-neutral"}`}>{user.active ? "Activo" : "Inactivo"}</span>
       </div>
-      <p className="mt-1 text-sm text-[var(--muted)]">@{user.username} · {user.role === "admin" ? "Administrador" : "EMS"}</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">@{user.username} · {user.role === "admin" ? "Administrador" : "EMS"}</p><p className="mt-2 text-sm">Discord: <strong>{configured ? "Configurado ✅" : "No configurado"}</strong></p>
     </div>
     <div className="mt-4 flex flex-wrap gap-2 md:mt-0">
       <button className="button button-secondary" type="button" disabled={busy} onClick={onReset}>{busy ? "Procesando…" : "Restablecer contraseña"}</button>
+      <button className="button button-secondary" type="button" disabled={busy} onClick={onWebhook}>Configurar</button>
       <button className="button button-ghost" type="button" disabled={busy} onClick={onToggle}>{busy ? "Procesando…" : user.active ? "Desactivar" : "Activar"}</button>
     </div>
   </article>;
 }
 
 function UserModal({ mode, selected, busy, onClose, onCreate, onReset }: UserModalProps) {
-  const title = mode === "create" ? "Nuevo usuario" : `Restablecer contraseña · ${selected?.rp_name ?? ""}`;
+  const title = mode === "create" ? "Nuevo usuario" : mode === "webhook" ? `Webhook de bitácora · ${selected?.rp_name ?? ""}` : `Restablecer contraseña · ${selected?.rp_name ?? ""}`;
   return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/70 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="glass-card w-full max-w-lg p-6" role="dialog" aria-modal="true" aria-labelledby="admin-dialog-title">
       <div className="flex items-center justify-between gap-4">
@@ -52,6 +53,10 @@ function UserModal({ mode, selected, busy, onClose, onCreate, onReset }: UserMod
         <label className="field">Contraseña<input className="field-input" name="password" type="password" required minLength={6} autoComplete="new-password" /></label>
         <label className="field">Rol<select className="field-input" name="role" defaultValue="ems"><option value="ems">EMS</option><option value="admin">Admin</option></select></label>
         <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Creando…" : "Crear usuario"}</button>
+      </form> : mode === "webhook" ? <form className="mt-5 grid gap-4" onSubmit={onReset}>
+        <label className="field">Webhook de bitácora<input className="field-input" name="webhookUrl" type="url" autoComplete="off" placeholder="https://discord.com/api/webhooks/..." /></label>
+        <p className="text-sm text-[var(--muted)]">La URL se cifra en servidor y no se volverá a mostrar.</p>
+        <div className="flex flex-wrap gap-3"><button className="button button-secondary" name="action" value="test" type="submit" disabled={busy}>Probar webhook</button><button className="button button-primary" name="action" value="save" type="submit" disabled={busy}>Guardar</button><button className="button button-danger" name="action" value="delete" type="submit" disabled={busy}>Eliminar configuración</button></div>
       </form> : <form className="mt-5 grid gap-4" onSubmit={onReset}>
         <label className="field">Nueva contraseña<input className="field-input" name="password" type="password" required minLength={6} autoComplete="new-password" /></label>
         <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Actualizando…" : "Actualizar contraseña"}</button>
@@ -60,12 +65,13 @@ function UserModal({ mode, selected, busy, onClose, onCreate, onReset }: UserMod
   </div>;
 }
 
-export function UsersPanel({ initialUsers }: { initialUsers: Profile[] }) {
+export function UsersPanel({ initialUsers, initialWebhookIds }: { initialUsers: Profile[]; initialWebhookIds: string[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [mode, setMode] = useState<Mode>(null);
   const [selected, setSelected] = useState<Profile | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [webhookIds, setWebhookIds] = useState(() => new Set(initialWebhookIds));
 
   function closeModal() {
     if (!busy) {
@@ -128,6 +134,7 @@ export function UsersPanel({ initialUsers }: { initialUsers: Profile[] }) {
     setBusy(true);
     setNotice(null);
     const form = new FormData(event.currentTarget);
+    if (mode === "webhook") { const action = ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null)?.value; try { const url = `/api/admin/users/${selected.id}/webhook${action === "test" ? "/test" : ""}`; const response = await fetch(url, action === "delete" ? { method: "DELETE" } : { method: action === "test" ? "POST" : "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ webhookUrl: form.get("webhookUrl") }) }); await assertOk(response); if (action === "test") setNotice({ tone: "success", text: "Webhook probado correctamente. Guárdalo para aplicarlo." }); else { setWebhookIds((current) => { const next = new Set(current); if (action === "delete") next.delete(selected.id); else next.add(selected.id); return next; }); setNotice({ tone: "success", text: action === "delete" ? "Configuración eliminada" : "Webhook guardado correctamente" }); closeModal(); } } catch (error) { setNotice({ tone: "error", text: error instanceof Error ? error.message : "No se pudo configurar el webhook" }); } finally { setBusy(false); } return; }
     try {
       await assertOk(await fetch("/api/admin/users/password", {
         method: "POST",
@@ -149,7 +156,7 @@ export function UsersPanel({ initialUsers }: { initialUsers: Profile[] }) {
       <button className="button button-primary" type="button" onClick={() => { setNotice(null); setMode("create"); }}><Icon name="plus" size={17} />Nuevo usuario</button>
     </div>
     {notice && <p className={notice.tone === "success" ? "toast toast-success" : "toast toast-error"} role="status">{notice.text}</p>}
-    {users.length === 0 ? <div className="p-8 text-center text-sm text-[var(--muted)]">No hay usuarios administrados.</div> : <div className="grid gap-3">{users.map((user) => <UserRow key={user.id} user={user} busy={busy} onReset={() => { setSelected(user); setMode("reset"); }} onToggle={() => toggle(user)} />)}</div>}
+    {users.length === 0 ? <div className="p-8 text-center text-sm text-[var(--muted)]">No hay usuarios administrados.</div> : <div className="grid gap-3">{users.map((user) => <UserRow key={user.id} user={user} busy={busy} configured={webhookIds.has(user.id)} onReset={() => { setSelected(user); setMode("reset"); }} onWebhook={() => { setSelected(user); setMode("webhook"); }} onToggle={() => toggle(user)} />)}</div>}
     {mode && <UserModal mode={mode} selected={selected} busy={busy} onClose={closeModal} onCreate={create} onReset={reset} />}
   </section>;
 }

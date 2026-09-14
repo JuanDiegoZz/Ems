@@ -102,6 +102,12 @@ create index deliveries_user_idx on public.deliveries(delivered_by, occurred_at 
 create index deliveries_date_idx on public.deliveries(occurred_at desc);
 ```
 
+## ems_shifts y ems_discord_webhooks
+
+La migración `supabase/migrations/20260914000000_ems_shifts_and_webhooks.sql` añade ambos modelos sin alterar datos existentes. `ems_shifts` conserva `started_at` y `ended_at` como `timestamptz`; la duración siempre se deriva de esos valores. El índice parcial `ems_shifts_one_open_per_profile` impide dos turnos abiertos por EMS y `ems_shifts_profile_started_idx` acelera sus analíticas.
+
+`ems_discord_webhooks` sólo contiene IV, ciphertext y tag de autenticación AES-GCM. Tiene RLS, grants revocados para browser y acceso exclusivamente mediante `service_role`.
+
 ## Opcional: admin_events
 
 Implementar solo si no retrasa V1.

@@ -69,6 +69,10 @@ No asumir si significa:
 
 La app guarda timestamp completo. Discord V1 muestra solo fecha para coincidir con las plantillas actuales. Historial sí muestra hora. Si el dueño quiere hora en Discord, es un cambio de formatter, no de DB.
 
+## Bitácoras EMS y webhooks personales
+
+Los turnos no siguen la sesión web: login/logout no abre ni cierra nada. `ems_shifts` usa un índice único parcial para imponer un solo turno abierto por perfil. Los webhooks personales se cifran con AES-256-GCM y nonces aleatorios de 96 bits; si falta `EMS_WEBHOOK_ENCRYPTION_KEY`, guardar/probar falla explícitamente y las bitácoras continúan sin webhook. Se reutiliza `deliveries(delivered_by, occurred_at)` para atribución histórica y las cantidades se reportan como etiquetas de kit, no como vendas unitarias inventadas.
+
 ## D-011 — Sin realtime inicialmente
 
 Búsquedas consultan el servidor y ven nuevos datos de cualquier ciudad/dispositivo. No usar Supabase Realtime en V1 porque no aporta valor suficiente.

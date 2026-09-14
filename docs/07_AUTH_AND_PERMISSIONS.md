@@ -119,3 +119,7 @@ V1 no ofrece interfaz ni endpoint de aplicación para que un EMS cambie su contr
 No confiar únicamente en invalidar UI.
 
 Cada request protegido debe verificar `profiles.active` para que un usuario ya autenticado quede bloqueado al ser desactivado.
+
+## Bitácora y rendimiento
+
+EMS y admin activos pueden abrir/cerrar exclusivamente su propia bitácora. Cerrar sesión no altera turnos. Las rutas de webhook y `/admin/ems-performance` requieren `requireAdmin()` en servidor; un EMS nunca recibe ni puede enumerar configuraciones o métricas de otros perfiles.

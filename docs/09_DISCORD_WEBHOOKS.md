@@ -7,6 +7,10 @@ V1 usa exactamente dos secretos:
 - `DISCORD_WEBHOOK_CIVIL`
 - `DISCORD_WEBHOOK_POLICE`
 
+Bitácoras usa un webhook independiente por EMS, cifrado en la tabla privada `ems_discord_webhooks`. Configurar `EMS_WEBHOOK_ENCRYPTION_KEY` en `.env.local` y Vercel como **base64 de exactamente 32 bytes** (por ejemplo, generar con `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`). No es `NEXT_PUBLIC_*`, nunca se registra y la URL no vuelve al browser después de guardarse.
+
+Discord es secundario: una bitácora se confirma en DB antes del intento de notificación. Un error deja el turno válido y registra un estado/error sanitizado. El mensaje de apertura indica EMS, inicio y `En servicio`; el de cierre añade fin y duración.
+
 Cada uno apunta al canal de Discord correspondiente.
 
 ## Seguridad
