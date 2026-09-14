@@ -25,7 +25,7 @@ function distance(a: string, b: string): number {
   return previous[b.length];
 }
 
-function fieldScore(value: string, query: string): number {
+function fieldScore(value: unknown, query: string): number {
   const normalized = normalizePersonName(value);
   if (!normalized) return 0;
   if (normalized === query) return 1000;

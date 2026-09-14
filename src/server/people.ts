@@ -4,6 +4,8 @@ import { createSupabaseAdminClient } from "../lib/supabase/admin.ts";
 import { normalizePersonName } from "../lib/normalization/person.ts";
 import { rankPeople } from "../lib/people/search.ts";
 import { canHardDelete } from "../lib/people/delete-policy.ts";
+import { normalizeDuplicateLookupInput, type DuplicateCandidate } from "../lib/people/duplicates.ts";
+import { getPeoplePageMeta, normalizePeoplePage, normalizePeoplePageSize, PEOPLE_PAGE_SIZE } from "../lib/people/pagination.ts";
 
 export type PersonRecord = { id: string; type: "civil" | "police"; first_name: string; last_name: string; display_name: string; search_name: string; badge_number: string | null; ine_path: string | null; badge_path: string | null; created_by: string; created_at: string; updated_at: string; archived_at: string | null };
 
@@ -16,38 +18,64 @@ export class PersonDeleteRequiresForceError extends Error {
 
 function safeTerm(value: string) { return value.replace(/[%,()]/g, " ").trim(); }
 
-export async function listPeople(options: { q?: string; type?: string; includeArchived?: boolean; limit?: number; offset?: number } = {}) {
+export type PeoplePage = {
+  items: PersonRecord[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export async function listPeople(options: { q?: string; search?: string; type?: string; includeArchived?: boolean; page?: number; pageSize?: number; limit?: number; offset?: number } = {}): Promise<PeoplePage> {
   const profile = await requireActiveProfile();
-  const limit = Math.min(Math.max(options.limit ?? 50, 1), 100);
+  const pageSize = normalizePeoplePageSize(options.pageSize ?? options.limit ?? PEOPLE_PAGE_SIZE);
+  const page = normalizePeoplePage(options.page ?? (options.offset === undefined ? 1 : Math.floor(Math.max(options.offset, 0) / pageSize) + 1));
   const client = createSupabaseAdminClient();
-  let query = client.from("people").select("*").order("created_at", { ascending: false });
+  let query = client.from("people").select("*", { count: "exact" }).order("created_at", { ascending: false });
   if (!options.includeArchived || profile.role !== "admin") query = query.is("archived_at", null);
   if (options.type === "civil" || options.type === "police") query = query.eq("type", options.type);
-  const term = safeTerm(normalizePersonName(options.q ?? ""));
+  const term = safeTerm(normalizePersonName(options.search ?? options.q ?? ""));
   if (term) {
     const pattern = `%${term.slice(0, Math.min(3, term.length))}%`;
     query = options.type === "civil" ? query.ilike("search_name", pattern) : query.or(`search_name.ilike.${pattern},badge_number.ilike.${pattern}`);
-    const { data, error } = await query.limit(200);
-    if (error) throw new Error("No se pudieron consultar las personas");
-    return rankPeople((data ?? []) as PersonRecord[], term).slice(options.offset ?? 0, (options.offset ?? 0) + limit);
   }
-  query = query.range(options.offset ?? 0, (options.offset ?? 0) + limit - 1);
-  const { data, error } = await query;
-  if (error) throw new Error("No se pudieron consultar las personas");
-  return (data ?? []) as PersonRecord[];
+  const load = async (targetPage: number) => {
+    const { data, count, error } = await query.range((targetPage - 1) * pageSize, targetPage * pageSize - 1);
+    if (error) throw new Error("No se pudieron consultar las personas");
+    return { items: (data ?? []) as PersonRecord[], total: count ?? 0 };
+  };
+  const first = await load(page);
+  const meta = getPeoplePageMeta(first.total, page, pageSize);
+  const result = meta.page === page ? first : await load(meta.page);
+  const items = term ? rankPeople(result.items, term) : result.items;
+  return { items, ...meta };
 }
 
-export async function findPersonDuplicates(input: PersonInput) {
+export async function findPersonDuplicates(input: unknown) {
   await requireActiveProfile();
-  const normalized = normalizePersonInput({ ...input, inePath: input.inePath || "placeholder", badgePath: input.badgePath || (input.type === "police" ? "placeholder" : undefined) });
+  const normalized = normalizeDuplicateLookupInput(input);
   const client = createSupabaseAdminClient();
-  const names = await client.from("people").select("id, display_name, type, badge_number").eq("search_name", normalized.searchName).is("archived_at", null).limit(10);
+  const fields = "id, display_name, type, badge_number, search_name";
+  const names = normalized.searchName
+    ? await client.from("people").select(fields).eq("search_name", normalized.searchName).is("archived_at", null).limit(10)
+    : { data: [], error: null };
+  const prefix = normalized.searchName.slice(0, Math.min(3, normalized.searchName.length));
+  const possible = prefix
+    ? await client.from("people").select(fields).ilike("search_name", `%${safeTerm(prefix)}%`).is("archived_at", null).limit(100)
+    : { data: [], error: null };
+  if (names.error || possible.error) throw new Error("No se pudo comprobar duplicados");
+  const possibleMatches = normalized.searchName
+    ? rankPeople((possible.data ?? []) as PersonRecord[], normalized.searchName).filter((person) => person.search_name !== normalized.searchName).slice(0, 5)
+    : [];
   let badgeMatch = false;
-  if (normalized.badgeNumber) {
-    const result = await client.from("people").select("id").eq("badge_number", normalized.badgeNumber).eq("type", "police").is("archived_at", null).maybeSingle();
+  let badgeMatches: DuplicateCandidate[] = [];
+  if (normalized.type === "police" && normalized.badgeNumber) {
+    const result = await client.from("people").select(fields).eq("badge_number", normalized.badgeNumber).eq("type", "police").is("archived_at", null).maybeSingle<DuplicateCandidate>();
+    if (result.error) throw new Error("No se pudo comprobar duplicados");
     badgeMatch = Boolean(result.data);
+    badgeMatches = result.data ? [result.data] : [];
   }
-  return { matches: names.data ?? [], badgeMatch };
+  return { matches: (names.data ?? []) as DuplicateCandidate[], possibleMatches, badgeMatch, badgeMatches };
 }
 
 export async function getPerson(id: string, includeArchived = false) {

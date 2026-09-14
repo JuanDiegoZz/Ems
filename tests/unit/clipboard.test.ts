@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clipboardBlobToFile, getImageFromClipboardItems, mimeToExtension } from "../../src/lib/people/clipboard.ts";
+import { clipboardBlobToFile, getImageFromClipboardItems, mimeToExtension, validateImageFile } from "../../src/lib/people/clipboard.ts";
 
 test("clipboard image helpers preserve PNG metadata", () => {
   const blob = new Blob(["png"], { type: "image/png" });
@@ -50,4 +50,16 @@ test("unsupported clipboard images keep their MIME for the existing validator to
     { kind: "file", type: "image/gif", getAsFile: () => new Blob(["gif"], { type: "image/gif" }) },
   ]);
   assert.equal(file?.type, "image/gif");
+});
+
+test("PNG, JPEG and WEBP files pass the shared document validator", () => {
+  for (const type of ["image/png", "image/jpeg", "image/webp"]) {
+    assert.equal(validateImageFile(new File(["image"], "document", { type })), null);
+  }
+});
+
+test("the shared document validator rejects files above 1.5 MB", () => {
+  const file = new File([new Uint8Array(1_572_865)], "large.png", { type: "image/png" });
+
+  assert.equal(validateImageFile(file), "La imagen supera el tamaño máximo permitido de 1.5 MB.");
 });

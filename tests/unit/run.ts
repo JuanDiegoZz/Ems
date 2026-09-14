@@ -4,3 +4,7 @@ import "./people-search.test.ts";
 import "./people-admin.test.ts";
 import "./people-documents.test.ts";
 import "./clipboard.test.ts";
+import "./paste-target.test.ts";
+import "./people-create-submit.test.ts";
+import "./people-pagination.test.ts";
+import "./delivery-selection.test.ts";

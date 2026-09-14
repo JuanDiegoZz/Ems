@@ -1,3 +1,5 @@
+import { MAX_DOCUMENT_BYTES } from "./documents.ts";
+
 export type ClipboardItemLike = {
   kind?: string;
   type: string;
@@ -20,6 +22,12 @@ export function mimeToExtension(mime: string): string {
 export function clipboardBlobToFile(blob: Blob, timestamp = Date.now()): File {
   const type = blob.type.toLowerCase();
   return new File([blob], `clipboard-${timestamp}.${mimeToExtension(type)}`, { type });
+}
+
+export function validateImageFile(file: File, maxSize = MAX_DOCUMENT_BYTES): string | null {
+  if (!file.type.match(/^image\/(jpeg|png|webp)$/)) return "Usa una imagen JPG, PNG o WEBP.";
+  if (file.size > maxSize) return "La imagen supera el tamaño máximo permitido de 1.5 MB.";
+  return null;
 }
 
 export function getImageFromClipboardItems(

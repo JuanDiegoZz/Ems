@@ -10,7 +10,8 @@ export function normalizeUsername(value: string): string {
   return username;
 }
 
-export function normalizePersonName(value: string): string {
+export function normalizePersonName(value: unknown): string {
+  if (typeof value !== "string") return "";
   return value
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")

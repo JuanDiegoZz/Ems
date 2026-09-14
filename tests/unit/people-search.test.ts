@@ -18,3 +18,8 @@ test("people search is accent-insensitive and preserves partial badge matches", 
   assert.equal(rankPeople(people, "atena")[0]?.display_name, "Átena Novoa");
   assert.equal(rankPeople(people, "21")[0]?.badge_number, "214");
 });
+
+test("people search tolerates incomplete historical relation fields", () => {
+  const incomplete = [{ first_name: undefined as unknown as string, last_name: undefined as unknown as string, display_name: "MARI HILL", badge_number: null }];
+  assert.equal(rankPeople(incomplete, "mari")[0]?.display_name, "MARI HILL");
+});
