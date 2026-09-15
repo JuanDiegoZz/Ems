@@ -4,6 +4,8 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import type { Profile } from "@/lib/auth/types";
 import { Icon } from "@/components/ui";
+import { useToast } from "@/components/feedback/toast-provider";
+import { useConnectivity } from "@/components/feedback/connectivity-provider";
 
 type Mode = "create" | "reset" | "webhook" | null;
 type Notice = { tone: "success" | "error"; text: string } | null;
@@ -56,7 +58,7 @@ function UserModal({ mode, selected, busy, onClose, onCreate, onReset }: UserMod
       </form> : mode === "webhook" ? <form className="mt-5 grid gap-4" onSubmit={onReset}>
         <label className="field">Webhook de bitácora<input className="field-input" name="webhookUrl" type="url" autoComplete="off" placeholder="https://discord.com/api/webhooks/..." /></label>
         <p className="text-sm text-[var(--muted)]">La URL se cifra en servidor y no se volverá a mostrar.</p>
-        <div className="flex flex-wrap gap-3"><button className="button button-secondary" name="action" value="test" type="submit" disabled={busy}>Probar webhook</button><button className="button button-primary" name="action" value="save" type="submit" disabled={busy}>Guardar</button><button className="button button-danger" name="action" value="delete" type="submit" disabled={busy}>Eliminar configuración</button></div>
+        <div className="flex flex-wrap gap-3"><button className="button button-secondary" name="action" value="test" type="submit" aria-busy={busy} disabled={busy}>{busy ? "Probando…" : "Probar webhook"}</button><button className="button button-primary" name="action" value="save" type="submit" aria-busy={busy} disabled={busy}>{busy ? "Guardando…" : "Guardar"}</button><button className="button button-danger" name="action" value="delete" type="submit" aria-busy={busy} disabled={busy}>{busy ? "Eliminando…" : "Eliminar configuración"}</button></div>
       </form> : <form className="mt-5 grid gap-4" onSubmit={onReset}>
         <label className="field">Nueva contraseña<input className="field-input" name="password" type="password" required minLength={6} autoComplete="new-password" /></label>
         <button className="button button-primary" type="submit" disabled={busy}>{busy ? "Actualizando…" : "Actualizar contraseña"}</button>
@@ -66,6 +68,8 @@ function UserModal({ mode, selected, busy, onClose, onCreate, onReset }: UserMod
 }
 
 export function UsersPanel({ initialUsers, initialWebhookIds }: { initialUsers: Profile[]; initialWebhookIds: string[] }) {
+  const toast = useToast();
+  const { online } = useConnectivity();
   const [users, setUsers] = useState(initialUsers);
   const [mode, setMode] = useState<Mode>(null);
   const [selected, setSelected] = useState<Profile | null>(null);
@@ -82,6 +86,8 @@ export function UsersPanel({ initialUsers, initialWebhookIds }: { initialUsers: 
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setNotice({ tone: "error", text: offline }); toast.error(offline); return; }
     setBusy(true);
     setNotice(null);
     const form = new FormData(event.currentTarget);
@@ -99,7 +105,7 @@ export function UsersPanel({ initialUsers, initialWebhookIds }: { initialUsers: 
       const body = await response.json().catch(() => null) as { user?: Profile; error?: string } | null;
       if (!response.ok || !body?.user) throw new Error(body?.error ?? "No se pudo crear el usuario");
       setUsers((current) => [...current, body.user as Profile]);
-      setNotice({ tone: "success", text: "Usuario creado correctamente" });
+      setNotice({ tone: "success", text: "Usuario creado correctamente" }); toast.success("Usuario creado correctamente.");
       setMode(null);
       setSelected(null);
     } catch (error) {
@@ -111,6 +117,8 @@ export function UsersPanel({ initialUsers, initialWebhookIds }: { initialUsers: 
 
   async function toggle(user: Profile) {
     if (user.active && !window.confirm(`¿Desactivar a ${user.rp_name}?`)) return;
+    if (busy) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setNotice({ tone: "error", text: offline }); toast.error(offline); return; }
     setBusy(true);
     setNotice(null);
     try {
@@ -131,6 +139,8 @@ export function UsersPanel({ initialUsers, initialWebhookIds }: { initialUsers: 
   async function reset(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selected) return;
+    if (busy) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setNotice({ tone: "error", text: offline }); toast.error(offline); return; }
     setBusy(true);
     setNotice(null);
     const form = new FormData(event.currentTarget);

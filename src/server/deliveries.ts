@@ -6,6 +6,7 @@ import { startOfDayInTimeZone } from "../lib/time/date.ts";
 import type { PersonRecord } from "./people.ts";
 import { DAILY_FREE_KIT_QUANTITY, getAppLocalDate } from "../lib/deliveries/daily-free-kit.ts";
 import { getDeliverySettings } from "./delivery-settings.ts";
+import { DASHBOARD_ACTIVITY_LIMIT } from "../lib/dashboard/activity.ts";
 
 export type DeliveryRecord = { id: string; client_request_id: string; person_id: string; delivered_by: string; type: "civil" | "police"; quantity_label: string; occurred_at: string; status: "pending" | "sent" | "failed"; is_daily_free_kit?: boolean; daily_free_kit_date?: string | null; discord_message_id?: string | null; discord_error?: string | null; sent_at?: string | null };
 export type DeliveryPerson = { id: string; display_name: string; badge_number: string | null; type: "civil" | "police"; ine_path?: string | null; badge_path?: string | null };
@@ -31,6 +32,13 @@ export async function listDeliveries(options: { q?: string; type?: string; statu
   if (options.to) query = query.lt("occurred_at", options.to);
   const term = options.q?.trim(); if (term) { const safe = term.replace(/[%,()]/g, " "); const [people, profiles] = await Promise.all([client.from("people").select("id").or(`search_name.ilike.%${safe}%,display_name.ilike.%${safe}%,badge_number.ilike.%${safe}%`), client.from("profiles").select("id").ilike("rp_name", `%${safe}%`)]); const personIds = (people.data ?? []).map((person) => person.id); const profileIds = (profiles.data ?? []).map((profile) => profile.id); if (!personIds.length && !profileIds.length) return { data: [] as DeliveryView[], count: 0, page, limit }; if (personIds.length && profileIds.length) query = query.or(`person_id.in.(${personIds.join(",")}),delivered_by.in.(${profileIds.join(",")})`); else if (personIds.length) query = query.in("person_id", personIds); else query = query.in("delivered_by", profileIds); }
   const result = await query; if (result.error) throw new Error("No se pudo consultar el historial"); return { data: (result.data ?? []).map((item) => normalizeDelivery(item as unknown as RawDelivery)), count: result.count ?? 0, page, limit };
+}
+
+export async function listMyRecentDeliveries() {
+  const profile = await requireActiveProfile();
+  const result = await createSupabaseAdminClient().from("deliveries").select("*, people(id, display_name, badge_number, type), profiles(id, rp_name)").eq("delivered_by", profile.id).order("occurred_at", { ascending: false }).limit(DASHBOARD_ACTIVITY_LIMIT);
+  if (result.error) throw new Error("No se pudo consultar la actividad reciente");
+  return (result.data ?? []).map((item) => normalizeDelivery(item as unknown as RawDelivery));
 }
 
 export async function listDeliveryOperators() { await requireActiveProfile(); const { data, error } = await createSupabaseAdminClient().from("profiles").select("id, rp_name").order("rp_name"); if (error) throw new Error("No se pudieron consultar los EMS"); return (data ?? []) as Array<{ id: string; rp_name: string }>; }

@@ -8,10 +8,13 @@ import { DocumentViewer } from "@/components/documents/document-viewer";
 import { DeliveryPersonPicker } from "./delivery-person-picker";
 import { perfTimer } from "@/lib/perf";
 import { deliveryPreselectionMessage } from "@/lib/deliveries/navigation";
+import { useToast } from "@/components/feedback/toast-provider";
+import { useConnectivity } from "@/components/feedback/connectivity-provider";
 
 const presets = ["5x5", "10x10", "20x20", "40x40"];
 
 export function CivilDeliveryForm({ rpName, timeZone, preselectedPersonId }: { rpName: string; timeZone: string; preselectedPersonId?: string }) {
+  const toast = useToast(); const { online } = useConnectivity();
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selected, setSelected] = useState<PersonRecord | null>(null);
@@ -58,6 +61,7 @@ export function CivilDeliveryForm({ rpName, timeZone, preselectedPersonId }: { r
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!selected || submitting.current) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setMessage(offline); toast.error(offline); return; }
     submitting.current = true;
     setStatus("sending");
     setMessage("");
@@ -66,8 +70,8 @@ export function CivilDeliveryForm({ rpName, timeZone, preselectedPersonId }: { r
       const response = await fetch("/api/deliveries/civil", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ personId: selected.id, quantityLabel: quantity, clientRequestId: crypto.randomUUID() }) });
       const data = await response.json();
       if (!response.ok) { setStatus("error"); setMessage(data.error ?? "No se pudo registrar la entrega"); return; }
-      setDelivery(data); setStatus("success");
-    } catch { setStatus("error"); setMessage("No se pudo conectar con el servidor. Intenta de nuevo."); }
+      setDelivery(data); setStatus("success"); toast.success("Entrega completada.");
+    } catch { const failure = "No se pudo conectar con el servidor. Intenta de nuevo."; setStatus("error"); setMessage(failure); toast.error(failure); }
     finally { submitting.current = false; done(); }
   }
 
@@ -86,6 +90,6 @@ export function CivilDeliveryForm({ rpName, timeZone, preselectedPersonId }: { r
     renderPersonMeta={(person) => <>Civil · INE disponible · Registrado {formatDate(person.created_at, timeZone)}</>}
     selectedDetails={<p className="text-sm text-[var(--muted)]">INE disponible · <DocumentViewer personId={selected?.id ?? ""} personName={selected?.display_name ?? ""} kind="ine" label="Ver INE" /></p>}
     emptyState={<div className="glass-card grid gap-3 p-5 text-sm"><p>No encontramos a {query}.</p><Link className="button button-primary w-fit" href={`/people/new?type=civil&returnTo=/deliveries/civil&searchHint=${encodeURIComponent(query)}`}>+ Registrar nuevo civil</Link></div>}
-    selectedForm={selected && <form onSubmit={submit} className="grid gap-4"><fieldset><legend className="mb-2 text-sm font-semibold">Cantidad de vendajes</legend><div className="grid grid-cols-4 gap-2">{presets.map((preset) => <button className={`button ${quantity === preset ? "button-primary" : "button-secondary"}`} type="button" key={preset} onClick={() => setQuantity(preset)}>{preset}</button>)}</div><input className="field-input mt-3" value={quantity} onChange={(event) => setQuantity(event.target.value)} maxLength={32} placeholder="Personalizado, ej. 10x10" /></fieldset>{message && <p className="text-sm text-red-300">{message}</p>}<button className="button button-primary" type="submit" disabled={status === "sending"}>{status === "sending" ? "Registrando…" : "Confirmar entrega"}</button></form>}
+    selectedForm={selected && <form onSubmit={submit} className="grid gap-4"><fieldset><legend className="mb-2 text-sm font-semibold">Cantidad de vendajes</legend><div className="grid grid-cols-4 gap-2">{presets.map((preset) => <button className={`button ${quantity === preset ? "button-primary" : "button-secondary"}`} type="button" key={preset} onClick={() => setQuantity(preset)}>{preset}</button>)}</div><input className="field-input mt-3" value={quantity} onChange={(event) => setQuantity(event.target.value)} maxLength={32} placeholder="Personalizado, ej. 10x10" /></fieldset>{message && <p className="text-sm text-red-300">{message}</p>}<button className="button button-primary" type="submit" aria-busy={status === "sending"} disabled={status === "sending"}>{status === "sending" ? "Procesando entrega…" : "Confirmar entrega"}</button></form>}
   /></>;
 }

@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/feedback/toast-provider";
+import { useConnectivity } from "@/components/feedback/connectivity-provider";
 
 type PersonActionsProps = { id: string; personName: string; archived: boolean; isAdmin: boolean; deliveryCount: number; showArchive?: boolean; showDelete?: boolean };
 
 export function PersonActions({ id, personName, archived, isAdmin, deliveryCount, showArchive = true, showDelete = true }: PersonActionsProps) {
   const router = useRouter();
+  const toast = useToast(); const { online } = useConnectivity();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(1);
@@ -15,14 +18,16 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
   const [error, setError] = useState("");
 
   async function archive() {
+    if (busy) return;
+    if (!online) { const message = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setError(message); toast.error(message); return; }
     setBusy(true);
     setError("");
     try {
       const response = await fetch(`/api/people/${id}/archive`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: !archived }) });
       if (!response.ok) throw new Error("No se pudo actualizar el archivo de la persona");
-      router.refresh();
+      toast.success(archived ? "Persona restaurada." : "Persona archivada."); router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "No se pudo actualizar la persona");
+      const message = caught instanceof Error ? caught.message : "No se pudo actualizar la persona"; setError(message); toast.error(message);
     } finally {
       setBusy(false);
     }
@@ -38,6 +43,7 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
 
   async function deletePermanently() {
     if (confirmation !== personName) return;
+    if (!online) { const message = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setError(message); toast.error(message); return; }
     setBusy(true);
     setError("");
     try {
@@ -50,10 +56,10 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
         return;
       }
       if (!response.ok) throw new Error(data?.error ?? "No se pudo eliminar la persona");
-      router.replace("/people");
+      toast.success("Persona eliminada."); router.replace("/people");
       router.refresh();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "No se pudo eliminar la persona");
+      const message = caught instanceof Error ? caught.message : "No se pudo eliminar la persona"; setError(message); toast.error(message);
     } finally {
       setBusy(false);
     }

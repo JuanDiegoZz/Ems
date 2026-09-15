@@ -12,9 +12,12 @@ import { getImageFromClipboardItems, validateImageFile } from "@/lib/people/clip
 import { resolvePasteTarget, type PasteTarget } from "@/lib/people/paste-target";
 import { buildDisplayName } from "@/lib/people/display-name";
 import { perfTimer } from "@/lib/perf";
+import { useToast } from "@/components/feedback/toast-provider";
+import { useConnectivity } from "@/components/feedback/connectivity-provider";
 
 export function PersonEditForm({ person }: { person: PersonRecord }) {
   const router = useRouter();
+  const toast = useToast(); const { online } = useConnectivity();
   const [firstName, setFirstName] = useState(person.first_name);
   const [lastName, setLastName] = useState(person.last_name);
   const [displayName, setDisplayName] = useState(person.display_name);
@@ -109,6 +112,8 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setError(offline); toast.error(offline); return; }
     setBusy(true);
     setError("");
     const done = perfTimer("update person");
@@ -124,9 +129,9 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
         setError(data?.error ?? "No se pudo actualizar la persona");
         return;
       }
-      router.push(`/people/${person.id}`);
+      toast.success("Persona actualizada correctamente."); router.push(`/people/${person.id}`);
     } catch {
-      setError("No se pudo conectar con el servidor. Intenta de nuevo.");
+      const failure = "No se pudo conectar con el servidor. Intenta de nuevo."; setError(failure); toast.error(failure);
     } finally {
       setBusy(false);
       done();

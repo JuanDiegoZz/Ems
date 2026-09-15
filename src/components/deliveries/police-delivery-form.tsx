@@ -10,11 +10,14 @@ import { DocumentViewer } from "@/components/documents/document-viewer";
 import { DeliveryPersonPicker } from "./delivery-person-picker";
 import { perfTimer } from "@/lib/perf";
 import { deliveryPreselectionMessage } from "@/lib/deliveries/navigation";
+import { useToast } from "@/components/feedback/toast-provider";
+import { useConnectivity } from "@/components/feedback/connectivity-provider";
 
 const presets = ["5x5", "10x10", "20x20", "40x40"];
 type DailyStatus = { enabled: boolean; available: boolean; localDate: string; freeQuantity: string };
 
 export function PoliceDeliveryForm({ rpName, timeZone, preselectedPersonId }: { rpName: string; timeZone: string; preselectedPersonId?: string }) {
+  const toast = useToast(); const { online } = useConnectivity();
   const [query, setQuery] = useState("");
   const [people, setPeople] = useState<PersonRecord[]>([]);
   const [selected, setSelected] = useState<PersonRecord | null>(null);
@@ -81,6 +84,7 @@ export function PoliceDeliveryForm({ rpName, timeZone, preselectedPersonId }: { 
 
   async function submit(acceptChargedDailyKit = false) {
     if (!selected || submitting.current) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setMessage(offline); toast.error(offline); return; }
     if (!acceptChargedDailyKit && dailyStatus?.enabled) {
       const decision = getDailyFreeKitDecision(true, quantity, !dailyStatus.available);
       if (decision.warning) { setChargeWarning({ title: dailyStatus.available ? "Kit diario gratuito" : "Kit diario ya entregado", description: decision.warning }); return; }
@@ -93,8 +97,8 @@ export function PoliceDeliveryForm({ rpName, timeZone, preselectedPersonId }: { 
       const data = await response.json();
       if (response.status === 409 && typeof data.code === "string") { setStatus("idle"); setChargeWarning({ title: "Kit diario ya entregado", description: data.error ?? "Esta entrega sí se cobra." }); return; }
       if (!response.ok) throw new Error(data.error ?? "No se pudo registrar la entrega");
-      setDelivery(data); setStatus("success"); setDailyStatusLoading(true); void loadDailyStatus(selected.id);
-    } catch (error) { setStatus("error"); setMessage(error instanceof Error ? error.message : "No se pudo registrar la entrega"); }
+      setDelivery(data); setStatus("success"); setDailyStatusLoading(true); void loadDailyStatus(selected.id); toast.success("Entrega completada.");
+    } catch (error) { const failure = error instanceof Error ? error.message : "No se pudo registrar la entrega"; setStatus("error"); setMessage(failure); toast.error(failure); }
     finally { submitting.current = false; done(); }
   }
 
@@ -113,6 +117,6 @@ export function PoliceDeliveryForm({ rpName, timeZone, preselectedPersonId }: { 
     renderPersonMeta={(person) => <>Policía · Placa {person.badge_number ?? "pendiente"}</>}
     selectedDetails={<><p className="text-sm text-[var(--muted)]">Placa: {selected?.badge_number ?? "pendiente"}</p>{dailyStatusLoading && <p className="text-sm text-[var(--muted)]">Consultando kit gratuito de hoy…</p>}{dailyStatus?.enabled && <p className={`text-sm font-semibold ${dailyStatus.available ? "text-emerald-300" : "text-amber-300"}`}>{dailyStatus.available ? "Kit gratuito de hoy disponible" : "Kit gratuito de hoy ya entregado"}</p>}<div className="flex flex-wrap gap-3">{selected?.ine_path && <DocumentViewer personId={selected.id} personName={selected.display_name} kind="ine" label="Ver INE" />}{selected?.badge_path && <DocumentViewer personId={selected.id} personName={selected.display_name} kind="badge" label="Ver placa" />}</div></>}
     emptyState={<div className="glass-card grid gap-3 p-5 text-sm"><p>No encontramos a {query}.</p><Link className="button button-primary w-fit" href={`/people/new?type=police&returnTo=/deliveries/police&searchHint=${encodeURIComponent(query)}`}>+ Registrar nuevo policía</Link></div>}
-    selectedForm={selected && <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="grid gap-4"><fieldset><legend className="mb-2 text-sm font-semibold">Cantidad de vendajes</legend><div className="grid grid-cols-4 gap-2">{presets.map((preset) => <button className={`button ${quantity === preset ? "button-primary" : "button-secondary"}`} type="button" key={preset} onClick={() => setQuantity(preset)}>{preset}</button>)}</div><input className="field-input mt-3" value={quantity} onChange={(event) => setQuantity(event.target.value)} maxLength={32} placeholder="Personalizado, ej. 10x10" /></fieldset>{dailyStatus?.enabled && quantity !== DAILY_FREE_KIT_QUANTITY && dailyStatus.available && <p className="text-xs text-amber-200">El kit gratuito diario corresponde a 5x5.</p>}{message && <p className="text-sm text-red-300">{message}</p>}<button className="button button-primary" type="submit" disabled={status === "sending"}>{status === "sending" ? "Registrando…" : "Confirmar entrega"}</button></form>}
+    selectedForm={selected && <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="grid gap-4"><fieldset><legend className="mb-2 text-sm font-semibold">Cantidad de vendajes</legend><div className="grid grid-cols-4 gap-2">{presets.map((preset) => <button className={`button ${quantity === preset ? "button-primary" : "button-secondary"}`} type="button" key={preset} onClick={() => setQuantity(preset)}>{preset}</button>)}</div><input className="field-input mt-3" value={quantity} onChange={(event) => setQuantity(event.target.value)} maxLength={32} placeholder="Personalizado, ej. 10x10" /></fieldset>{dailyStatus?.enabled && quantity !== DAILY_FREE_KIT_QUANTITY && dailyStatus.available && <p className="text-xs text-amber-200">El kit gratuito diario corresponde a 5x5.</p>}{message && <p className="text-sm text-red-300">{message}</p>}<button className="button button-primary" type="submit" aria-busy={status === "sending"} disabled={status === "sending"}>{status === "sending" ? "Procesando entrega…" : "Confirmar entrega"}</button></form>}
   /><ChoiceDialog open={Boolean(chargeWarning)} title={chargeWarning?.title ?? "Kit diario"} description={chargeWarning?.description ?? ""} options={[{ key: "continue", label: "Continuar con entrega", tone: "primary" }, { key: "cancel", label: "Cancelar", tone: "ghost" }]} onClose={() => setChargeWarning(null)} onSelect={(key) => { setChargeWarning(null); if (key === "continue") void submit(true); }} /></>;
 }

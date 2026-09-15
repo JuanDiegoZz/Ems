@@ -17,6 +17,8 @@ import { validateSelectedIne, type PersonType } from "@/lib/people/validation";
 import { buildPersonCreateFormData, personCreateHttpMessage, postPersonCreate } from "@/lib/people/create-submit";
 import { getUpgradeDialogOptions, getUpgradeEndpoint, shouldSuppressAcceptedUpgrade, validateUpgradeFields } from "@/lib/people/upgrade-flow";
 import { perfTimer } from "@/lib/perf";
+import { useToast } from "@/components/feedback/toast-provider";
+import { useConnectivity } from "@/components/feedback/connectivity-provider";
 import { postPersonDestination, type DeliveryRoute } from "@/lib/deliveries/navigation";
 
 const DEBUG = process.env.NEXT_PUBLIC_OCR_DEBUG === "true";
@@ -43,6 +45,7 @@ function candidateDetails(candidate: DuplicateCandidate | undefined) {
 
 export function PersonCreateForm({ initialType = "civil", returnTo = null, searchHint = "" }: { initialType?: PersonType; returnTo?: DeliveryRoute | null; searchHint?: string }) {
   const router = useRouter();
+  const toast = useToast(); const { online } = useConnectivity();
   const [type, setType] = useState<PersonType>(initialType);
   const [ocr, setOcr] = useState<DniV2Fields>({ firstName: "", lastName: "", status: "empty", confidence: "low", firstNameConfidence: 0, lastNameConfidence: 0, strategy: "full-image-rows" });
   const [ineFile, setIneFile] = useState<File | null>(null);
@@ -181,9 +184,9 @@ export function PersonCreateForm({ initialType = "civil", returnTo = null, searc
       const payload = await response.json().catch(() => null) as { error?: string; person?: { id?: string } } | null;
       if (!response.ok) { setError(payload?.error ?? "No se pudieron agregar los datos policiales."); return; }
       const personId = payload?.person?.id ?? candidate.id;
-      router.push(returnTo ? postPersonDestination(returnTo, "police", personId) : `/people/${personId}?upgraded=1`);
+      toast.success("Datos policiales agregados."); router.push(returnTo ? postPersonDestination(returnTo, "police", personId) : `/people/${personId}?upgraded=1`);
     } catch {
-      setError("No se pudo conectar con el servidor. Intenta de nuevo.");
+      const failure = "No se pudo conectar con el servidor. Intenta de nuevo."; setError(failure); toast.error(failure);
     } finally {
       setUpgrading(false);
     }
@@ -242,6 +245,8 @@ export function PersonCreateForm({ initialType = "civil", returnTo = null, searc
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (busy) return;
+    if (!online) { const offline = "No hay conexión. Intenta nuevamente cuando recuperes internet."; setError(offline); toast.error(offline); return; }
     const formElement = event.currentTarget;
     if (upgradeCandidate) {
       const upgradeError = validateUpgradeFields(badgeNumber, badgeFile instanceof File);
@@ -331,7 +336,7 @@ export function PersonCreateForm({ initialType = "civil", returnTo = null, searc
       if (process.env.NODE_ENV === "development") console.log("[person-create] API success", { personId });
       if (process.env.NODE_ENV === "development") console.log("[person-create] navigating", { personId });
       try {
-        router.push(postPersonDestination(returnTo, type, personId));
+        toast.success("Persona registrada correctamente."); router.push(postPersonDestination(returnTo, type, personId));
       } catch (caught) {
         if (process.env.NODE_ENV === "development") console.error("[person-create] navigation failed", caught);
         setError("La persona se registró, pero no se pudo abrir su ficha.");

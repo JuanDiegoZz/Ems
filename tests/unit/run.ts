@@ -15,3 +15,7 @@ import "./delivery-navigation.test.ts";
 import "./shifts.test.ts";
 import "./mobile-navigation.test.ts";
 import "./operational-staff.test.ts";
+import "./global-search.test.ts";
+import "./recent-people.test.ts";
+import "./active-shift.test.ts";
+import "./productivity-feedback.test.ts";
