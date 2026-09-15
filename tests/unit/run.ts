@@ -19,3 +19,6 @@ import "./global-search.test.ts";
 import "./recent-people.test.ts";
 import "./active-shift.test.ts";
 import "./productivity-feedback.test.ts";
+import "./login-feedback.test.ts";
+import "./dashboard-streaming.test.ts";
+import "./dashboard-warmup.test.ts";

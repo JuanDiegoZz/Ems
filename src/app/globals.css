@@ -136,6 +136,8 @@ button:active, .card-interactive:active, .mobile-sheet-link:active { transform: 
 .login-page { align-items: center; background: radial-gradient(circle at 50% 0%, rgba(34,211,238,.1), transparent 32rem), var(--background); display: flex; justify-content: center; min-height: 100vh; padding: 20px; }
 .login-card { max-width: 430px; width: 100%; }
 .login-card .brand-mark { box-shadow: 0 12px 32px rgba(59,130,246,.26); }
+.login-page-leaving { opacity: 0; transition: opacity .18s ease; }
+.loading-spinner { animation: spin .7s linear infinite; border: 2px solid rgba(255,255,255,.38); border-right-color: white; border-radius: 999px; height: 16px; width: 16px; }
 .text-red-600 { color: #fca5a5 !important; }
 .text-blue-600 { color: #93c5fd !important; }
 .text-slate-600 { color: var(--text-secondary) !important; }
@@ -145,4 +147,5 @@ button:active, .card-interactive:active, .mobile-sheet-link:active { transform: 
 @keyframes sheet-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes pulse { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
