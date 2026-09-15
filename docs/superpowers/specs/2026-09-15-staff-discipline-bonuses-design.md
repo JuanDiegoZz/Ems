@@ -18,7 +18,7 @@ Add an admin-only staff control center, auditable discipline, and weekly bonus s
 
 The control center is the default administrative triage view. Its order is fixed: heading and “Registrar sanción”, clickable summary cards, filters and EMS search, “Requieren atención”, then the complete staff list. Summary cards activate the matching filter. Desktop retains the approved two-column attention area; mobile places “Qué revisar esta semana” after the prioritized staff content or omits it when it only repeats data.
 
-Each EMS card is a compact operational record: status label and icon, weekly hours and visible five-hour goal, inactivity, active warns, strikes, weekly fines, justified-absence label (`Permiso hasta DD MMM`), detail link, and contextual `Sancionar`. Critical cards additionally say `CRÍTICO`, `Strikes 3/3 · Límite alcanzado`, and `Revisión administrativa requerida`; no state depends on colour alone. Search filters by EMS name locally over the server-provided current staff page. Lists are server-aggregated, not one request per EMS.
+Each EMS card is a compact operational record: status label and icon, weekly hours and visible five-hour goal, inactivity, active warns, strikes, weekly fines, justified-absence label (`Permiso hasta DD MMM`), detail link, and contextual `Sancionar`. Critical cards additionally say `CRÍTICO`, `Strikes 3/3 · Límite alcanzado`, and `Revisión administrativa requerida`; no state depends on colour alone. Name search and every status filter apply to the complete server-side aggregated staff set before pagination, so a result is never limited to the loaded page. Lists are server-aggregated, not one request per EMS.
 
 The attention order is deterministic: 3+ active strikes, 7+ inactive days, 2 strikes, missed goal, 3+ inactive days, then 2 active warns. Ties order by RP name then UUID.
 
@@ -49,6 +49,7 @@ The additive migration adds private, RLS-protected public tables; grants are rev
 - UUID primary key; `profile_id`, `issued_by`, `issued_at`, required `reason`, `type` (`warn`, `strike`, `fine`), and immutable creation fields.
 - `fine_amount` is a non-negative integer pesos amount and is required only for `fine`.
 - `applies_to_week` is a Monday local calendar `date`, required only for a fine.
+- `related_action_id` optionally links an independent fine to its originating warn or strike. A warning/strike and its fine remain independently voidable and fully auditable.
 - `converted_to_strike_id` links historical warns to their generated strike; `triggered_by_warn_id` on a generated strike identifies the third warn which caused conversion.
 - `generated_from_warns` distinguishes automatic from direct strikes.
 - Void audit fields: `voided_at`, `voided_by`, and mandatory `void_reason`.
@@ -71,7 +72,7 @@ All route handlers and server services call `requireAdmin()`. Tables are never a
 
 `record_disciplinary_action` is a `SECURITY DEFINER`, `search_path = ''` PostgreSQL function callable only by `service_role`. It validates that the supplied issuer is an active admin, obtains a transaction-scoped advisory lock keyed by target profile, inserts the requested action, locks that profile’s active warnings with `FOR UPDATE`, and converts exactly the first configured threshold warnings into one generated strike. It stores all converted warning links plus the third triggering warning. This serializes simultaneous admins and prevents four active warns or duplicate strikes.
 
-`void_disciplinary_action` uses the same profile lock. A direct strike void only voids that strike. Voiding a generated strike atomically voids its triggering third warning, clears the conversion links from the first two warnings so they become active again, and records all void actors/timestamps/reasons. The result is two active warnings and zero active strikes. Fines are excluded from a live simulation as soon as voided; finalized bonus results are immutable and require a separately audited override rather than silent recalculation.
+`void_disciplinary_action` uses the same profile lock. A direct strike void only voids that strike. Voiding a generated strike atomically finds every warning linked by `converted_to_strike_id`, voids exactly `triggered_by_warn_id`, and clears the conversion link on every other linked warning so each becomes active again. This is derived from the actual conversion set, never a hardcoded “first two/third” rule; with the default threshold of three it produces two active warns and zero active strikes. It records all void actors/timestamps/reasons. Fines are excluded from a live simulation as soon as voided; finalized bonus results are immutable and require a separately audited override rather than silent recalculation.
 
 Functions use explicit `public.` references, an empty search path, and revoked `EXECUTE` from `anon`/`authenticated`, following current Supabase function security guidance.
 
@@ -79,7 +80,7 @@ Functions use explicit `public.` references, an empty search path, and revoked `
 
 Weeks are `[Monday 00:00, next Monday 00:00)` in `APP_TIMEZONE`. The existing shift helper is extended with pure local-calendar range construction and interval splitting. Open shifts use supplied `now` only for present-week simulation; no row is closed. Each shift is clipped to the week and split at local 22:00 and 04:00 boundaries, so cross-midnight shifts count peak and normal minutes exactly.
 
-Activity days use local calendar intervals and require accumulated shift minutes at or above the configured minimum. Inactivity uses the last real `ems_shifts.started_at` reference, or `profiles.created_at` if absent, expressed in local calendar days. Justified-absence days are excluded from the consecutive inactivity run, not turned into artificial activity. Weekly goal is separately visible at 299/300/301 minutes.
+Activity days use local calendar intervals and require accumulated shift minutes at or above the configured minimum. Inactivity uses the last real `ems_shifts.started_at` reference, or `profiles.created_at` if absent, expressed in local calendar days. Justified-absence days pause the consecutive inactivity clock rather than reset it or create artificial activity: a Monday last shift, Tuesday–Thursday approved absence, and Friday without activity yields one inactive day. Weekly goal is separately visible at 299/300/301 minutes.
 
 Kits count delivered `deliveries` records by `delivered_by` in the weekly interval. The current delivery index is reused; the staff/bonus aggregate fetches profile, shift, delivery, discipline, and absence sets in bounded queries then groups in server memory. No per-card fetches occur.
 
