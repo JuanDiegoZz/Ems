@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { ServiceWorker } from "@/components/pwa/service-worker";
@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   title: "EMS Hospital",
   description: "Herramientas privadas para EMS Hospital",
 };
+export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 type RootLayoutProps = Readonly<{
   children: ReactNode;

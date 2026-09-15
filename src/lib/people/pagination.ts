@@ -1,4 +1,5 @@
-export const PEOPLE_PAGE_SIZE = 25;
+export const PEOPLE_PAGE_SIZE = 15;
+export const PEOPLE_PICKER_LIMIT = 50;
 export const PEOPLE_PAGE_MAX_SIZE = 100;
 
 export type PeopleQuery = {

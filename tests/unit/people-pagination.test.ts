@@ -1,23 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PEOPLE_PAGE_SIZE, getPeoplePageMeta, normalizePeoplePage, normalizePeoplePageSize, parsePeopleQuery, pageAfterCriteriaChange } from "../../src/lib/people/pagination.ts";
+import { PEOPLE_PAGE_SIZE, PEOPLE_PICKER_LIMIT, getPeoplePageMeta, normalizePeoplePage, normalizePeoplePageSize, parsePeopleQuery, pageAfterCriteriaChange } from "../../src/lib/people/pagination.ts";
 
-test("uses 25 people per page by default", () => {
-  assert.equal(PEOPLE_PAGE_SIZE, 25);
-  assert.equal(normalizePeoplePageSize(null), 25);
+test("uses 15 people per page by default", () => {
+  assert.equal(PEOPLE_PAGE_SIZE, 15);
+  assert.equal(normalizePeoplePageSize(null), 15);
+  assert.equal(PEOPLE_PICKER_LIMIT, 50);
 });
 
 test("calculates first, next and last page metadata", () => {
-  assert.deepEqual(getPeoplePageMeta(183, 1, 25), { page: 1, pageSize: 25, total: 183, totalPages: 8, from: 1, to: 25 });
-  assert.deepEqual(getPeoplePageMeta(183, 2, 25), { page: 2, pageSize: 25, total: 183, totalPages: 8, from: 26, to: 50 });
-  assert.deepEqual(getPeoplePageMeta(183, 8, 25), { page: 8, pageSize: 25, total: 183, totalPages: 8, from: 176, to: 183 });
+  assert.deepEqual(getPeoplePageMeta(183, 1, 15), { page: 1, pageSize: 15, total: 183, totalPages: 13, from: 1, to: 15 });
+  assert.deepEqual(getPeoplePageMeta(183, 2, 15), { page: 2, pageSize: 15, total: 183, totalPages: 13, from: 16, to: 30 });
+  assert.deepEqual(getPeoplePageMeta(183, 13, 15), { page: 13, pageSize: 15, total: 183, totalPages: 13, from: 181, to: 183 });
 });
 
 test("clamps pages outside the result range and keeps empty results on page 1", () => {
   assert.equal(normalizePeoplePage("invalid"), 1);
-  assert.equal(getPeoplePageMeta(183, 99, 25).page, 8);
+  assert.equal(getPeoplePageMeta(183, 99, 15).page, 13);
   assert.equal(getPeoplePageMeta(0, 99, 25).page, 1);
-  assert.deepEqual(getPeoplePageMeta(0, 1, 25), { page: 1, pageSize: 25, total: 0, totalPages: 1, from: 0, to: 0 });
+  assert.deepEqual(getPeoplePageMeta(0, 1, 15), { page: 1, pageSize: 15, total: 0, totalPages: 1, from: 0, to: 0 });
 });
 
 test("resets to page 1 when search or type changes", () => {
