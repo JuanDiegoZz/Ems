@@ -17,5 +17,5 @@ export default async function PeoplePage({ searchParams }: { searchParams: Promi
   if (params.page) query.set("page", params.page);
   const parsed = parsePeopleQuery(query);
   const people = await listPeople({ ...parsed, pageSize: PEOPLE_PAGE_SIZE });
-  return <AppShell profile={profile}><PageHeader eyebrow="Personas" title="Personas" description="Busca civiles y policías por nombre o placa." action={<Button href="/people/new" icon="plus">Registrar persona</Button>} /><PeopleBrowser initial={people} initialSearch={parsed.search} initialType={parsed.type} /></AppShell>;
+  return <AppShell profile={profile}><PageHeader eyebrow="Personas" title="Personas" description="Busca civiles y policías por nombre o placa." action={<Button href="/people/new" icon="plus">Registrar persona</Button>} /><PeopleBrowser profileId={profile.id} initial={people} initialSearch={parsed.search} initialType={parsed.type} /></AppShell>;
 }

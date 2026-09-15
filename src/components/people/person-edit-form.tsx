@@ -14,6 +14,7 @@ import { buildDisplayName } from "@/lib/people/display-name";
 import { perfTimer } from "@/lib/perf";
 import { useToast } from "@/components/feedback/toast-provider";
 import { useConnectivity } from "@/components/feedback/connectivity-provider";
+import { invalidatePeopleFirstPages } from "@/lib/people/session-cache";
 
 export function PersonEditForm({ person }: { person: PersonRecord }) {
   const router = useRouter();
@@ -129,7 +130,7 @@ export function PersonEditForm({ person }: { person: PersonRecord }) {
         setError(data?.error ?? "No se pudo actualizar la persona");
         return;
       }
-      toast.success("Persona actualizada correctamente."); router.push(`/people/${person.id}`);
+      invalidatePeopleFirstPages(); toast.success("Persona actualizada correctamente."); router.push(`/people/${person.id}`);
     } catch {
       const failure = "No se pudo conectar con el servidor. Intenta de nuevo."; setError(failure); toast.error(failure);
     } finally {

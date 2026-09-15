@@ -17,6 +17,7 @@ import { validateSelectedIne, type PersonType } from "@/lib/people/validation";
 import { buildPersonCreateFormData, personCreateHttpMessage, postPersonCreate } from "@/lib/people/create-submit";
 import { getUpgradeDialogOptions, getUpgradeEndpoint, shouldSuppressAcceptedUpgrade, validateUpgradeFields } from "@/lib/people/upgrade-flow";
 import { perfTimer } from "@/lib/perf";
+import { invalidatePeopleFirstPages } from "@/lib/people/session-cache";
 import { useToast } from "@/components/feedback/toast-provider";
 import { useConnectivity } from "@/components/feedback/connectivity-provider";
 import { postPersonDestination, type DeliveryRoute } from "@/lib/deliveries/navigation";
@@ -184,7 +185,7 @@ export function PersonCreateForm({ initialType = "civil", returnTo = null, searc
       const payload = await response.json().catch(() => null) as { error?: string; person?: { id?: string } } | null;
       if (!response.ok) { setError(payload?.error ?? "No se pudieron agregar los datos policiales."); return; }
       const personId = payload?.person?.id ?? candidate.id;
-      toast.success("Datos policiales agregados."); router.push(returnTo ? postPersonDestination(returnTo, "police", personId) : `/people/${personId}?upgraded=1`);
+      invalidatePeopleFirstPages(); toast.success("Datos policiales agregados."); router.push(returnTo ? postPersonDestination(returnTo, "police", personId) : `/people/${personId}?upgraded=1`);
     } catch {
       const failure = "No se pudo conectar con el servidor. Intenta de nuevo."; setError(failure); toast.error(failure);
     } finally {
@@ -333,7 +334,7 @@ export function PersonCreateForm({ initialType = "civil", returnTo = null, searc
       const data = result.payload as { person?: { id?: string } } | null;
       const personId = data?.person?.id;
       if (!personId) { setError("No se pudo registrar la persona."); return; }
-      if (process.env.NODE_ENV === "development") console.log("[person-create] API success", { personId });
+      invalidatePeopleFirstPages(); if (process.env.NODE_ENV === "development") console.log("[person-create] API success", { personId });
       if (process.env.NODE_ENV === "development") console.log("[person-create] navigating", { personId });
       try {
         toast.success("Persona registrada correctamente."); router.push(postPersonDestination(returnTo, type, personId));

@@ -41,12 +41,13 @@ export function CivilDeliveryForm({ rpName, timeZone, preselectedPersonId }: { r
 
   useEffect(() => {
     if (preselectLoading) return;
+    if (query.trim().length < 2) return;
     const current = ++sequence.current;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       setStatus("searching");
       try {
-        const response = await fetch(`/api/people?q=${encodeURIComponent(query)}&deliveryType=civil`, { signal: controller.signal });
+        const response = await fetch(`/api/people?q=${encodeURIComponent(query)}&deliveryType=civil`, { signal: controller.signal, cache: "no-store" });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error ?? "No se pudo buscar");
         if (current === sequence.current) { setPeople(data as PersonRecord[]); setStatus("idle"); }

@@ -52,7 +52,7 @@ export async function GET(request: Request) {
     const paginated = url.searchParams.has("page") || url.searchParams.has("pageSize");
     const deliveryType = url.searchParams.get("deliveryType");
     const result = await listPeople({ ...query, deliveryType: deliveryType === "civil" || deliveryType === "police" ? deliveryType : undefined, pageSize: paginated ? query.pageSize : PEOPLE_PICKER_LIMIT });
-    return NextResponse.json(paginated ? result : result.items);
+    return NextResponse.json(paginated ? result : result.items, { headers: query.search.trim().length >= 2 ? { "Cache-Control": "private, no-store" } : undefined });
   }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Unauthorized" }, { status: 403 }); }
   finally { done(); }

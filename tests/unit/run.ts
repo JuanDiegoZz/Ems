@@ -7,6 +7,8 @@ import "./clipboard.test.ts";
 import "./paste-target.test.ts";
 import "./people-create-submit.test.ts";
 import "./people-pagination.test.ts";
+import "./people-session-cache.test.ts";
+import "./people-browser-state.test.ts";
 import "./delivery-selection.test.ts";
 import "./person-identity.test.ts";
 import "./upgrade-flow.test.ts";

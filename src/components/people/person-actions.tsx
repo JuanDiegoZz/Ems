@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/feedback/toast-provider";
 import { useConnectivity } from "@/components/feedback/connectivity-provider";
+import { invalidatePeopleFirstPages } from "@/lib/people/session-cache";
 
 type PersonActionsProps = { id: string; personName: string; archived: boolean; isAdmin: boolean; deliveryCount: number; showArchive?: boolean; showDelete?: boolean };
 
@@ -25,7 +26,7 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
     try {
       const response = await fetch(`/api/people/${id}/archive`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: !archived }) });
       if (!response.ok) throw new Error("No se pudo actualizar el archivo de la persona");
-      toast.success(archived ? "Persona restaurada." : "Persona archivada."); router.refresh();
+      invalidatePeopleFirstPages(); toast.success(archived ? "Persona restaurada." : "Persona archivada."); router.refresh();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "No se pudo actualizar la persona"; setError(message); toast.error(message);
     } finally {
@@ -56,7 +57,7 @@ export function PersonActions({ id, personName, archived, isAdmin, deliveryCount
         return;
       }
       if (!response.ok) throw new Error(data?.error ?? "No se pudo eliminar la persona");
-      toast.success("Persona eliminada."); router.replace("/people");
+      invalidatePeopleFirstPages(); toast.success("Persona eliminada."); router.replace("/people");
       router.refresh();
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "No se pudo eliminar la persona"; setError(message); toast.error(message);

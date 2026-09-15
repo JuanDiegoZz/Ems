@@ -6,11 +6,13 @@ import Link from "next/link";
 import type { PeoplePage, PersonRecord } from "@/server/people";
 import { Icon } from "@/components/ui";
 import { pageAfterCriteriaChange, PEOPLE_PAGE_SIZE } from "@/lib/people/pagination";
+import { joinPeopleRequest, readPeopleFirstPage, writePeopleFirstPage } from "@/lib/people/session-cache";
+import { shouldApplyPeopleResult } from "@/lib/people/browser-state";
 
-export function PeopleBrowser({ initial, initialSearch = "", initialType = "" }: { initial: PeoplePage; initialSearch?: string; initialType?: "" | "civil" | "police" }) {
+export function PeopleBrowser({ profileId, initial, initialSearch = "", initialType = "" }: { profileId: string; initial: PeoplePage; initialSearch?: string; initialType?: "" | "civil" | "police" }) {
   const router = useRouter();
   const pathname = usePathname();
-  const [people, setPeople] = useState<PersonRecord[]>(initial.items);
+  const [people, setPeople] = useState<PersonRecord[]>(() => readPeopleFirstPage<PeoplePage>({ profileId, page: initial.page, search: initialSearch, type: initialType })?.items ?? initial.items);
   const [q, setQ] = useState(initialSearch);
   const [type, setType] = useState(initialType);
   const [page, setPage] = useState(initial.page);
@@ -21,8 +23,22 @@ export function PeopleBrowser({ initial, initialSearch = "", initialType = "" }:
   const sequence = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const previousPage = useRef(initial.page);
+  const initialFetch = useRef(true);
+  const [refresh, setRefresh] = useState(0);
+
+  useEffect(() => { writePeopleFirstPage({ profileId, page: initial.page, search: initialSearch, type: initialType }, initial); }, [initial, initialSearch, initialType, profileId]);
 
   useEffect(() => {
+    if (q.trim().length >= 2) return;
+    const revalidate = () => { if (document.visibilityState === "visible") setRefresh((value) => value + 1); };
+    const interval = window.setInterval(revalidate, 25000);
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
+    return () => { window.clearInterval(interval); window.removeEventListener("focus", revalidate); document.removeEventListener("visibilitychange", revalidate); };
+  }, [q]);
+
+  useEffect(() => {
+    if (initialFetch.current) { initialFetch.current = false; return; }
     const currentSequence = ++sequence.current;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
@@ -30,11 +46,18 @@ export function PeopleBrowser({ initial, initialSearch = "", initialType = "" }:
       setError("");
       try {
         const params = new URLSearchParams({ search: q, type, page: String(page), pageSize: String(PEOPLE_PAGE_SIZE) });
-        const response = await fetch(`/api/people?${params}`, { signal: controller.signal });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error ?? "No se pudo buscar");
+        const shared = joinPeopleRequest({ profileId, page, search: q, type }, async (signal) => {
+          const response = await fetch(`/api/people?${params}`, { signal, cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error ?? "No se pudo buscar");
+          return data;
+        });
+        controller.signal.addEventListener("abort", shared.cancel, { once: true });
+        const data = await shared.promise;
+        shared.cancel();
         if (!data || !Array.isArray(data.items)) throw new Error("Respuesta inválida del servidor");
-        if (currentSequence === sequence.current) {
+        if (shouldApplyPeopleResult(currentSequence, sequence.current, controller.signal.aborted)) {
+          writePeopleFirstPage({ profileId, page, search: q, type }, data as PeoplePage);
           setPeople(data.items as PersonRecord[]);
           setPage(data.page);
           setTotal(data.total);
@@ -42,13 +65,13 @@ export function PeopleBrowser({ initial, initialSearch = "", initialType = "" }:
         }
       } catch (caught) {
         if (caught instanceof DOMException && caught.name === "AbortError") return;
-        if (currentSequence === sequence.current) setError(caught instanceof Error ? caught.message : "No se pudo buscar");
+        if (shouldApplyPeopleResult(currentSequence, sequence.current, controller.signal.aborted)) setError(caught instanceof Error ? caught.message : "No se pudo buscar");
       } finally {
-        if (currentSequence === sequence.current) setLoading(false);
+        if (shouldApplyPeopleResult(currentSequence, sequence.current, controller.signal.aborted)) setLoading(false);
       }
     }, 250);
     return () => { window.clearTimeout(timer); controller.abort(); };
-  }, [q, type, page]);
+  }, [page, profileId, q, refresh, type]);
 
   useEffect(() => {
     const params = new URLSearchParams();
