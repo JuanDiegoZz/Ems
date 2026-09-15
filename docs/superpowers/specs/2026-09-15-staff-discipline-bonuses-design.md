@@ -34,7 +34,7 @@ Void confirmation explains the irreversible audit effect. An auto-generated stri
 
 ### `/admin/bonuses`
 
-This is a week-at-a-time simulator, not a payment screen. It shows a period picker, configuration summary, Calculate simulation action, ranked staff cards, all score components, visible goal/review state, fines, and recommended final amount. Ranking is recognition only. A week with an unmet goal or relevant justified absence is `review_required`; simulation never silently finalizes it.
+This is a week-at-a-time simulator, not a payment screen. It shows a period picker, configuration summary, Calculate simulation action, ranked staff cards, all score components, visible goal/review state, fines, and recommended final amount. Ranking is recognition only. A week with an unmet goal or relevant justified absence is `review_required`; simulation never silently finalizes it. A result with review required must be explicitly resolved by an admin before run finalization: the admin may approve its recommendation unchanged or override the amount with a reason. Both record resolver, timestamp, and mandatory review reason.
 
 ### `/admin/bonuses/settings`
 
@@ -47,9 +47,9 @@ The additive migration adds private, RLS-protected public tables; grants are rev
 ### `disciplinary_actions`
 
 - UUID primary key; `profile_id`, `issued_by`, `issued_at`, required `reason`, `type` (`warn`, `strike`, `fine`), and immutable creation fields.
-- `fine_amount` is a non-negative integer pesos amount and is required only for `fine`.
-- `applies_to_week` is a Monday local calendar `date`, required only for a fine.
-- `related_action_id` optionally links an independent fine to its originating warn or strike. A warning/strike and its fine remain independently voidable and fully auditable.
+- `fine_amount` is a positive integer pesos amount and is required only for `fine`.
+- `applies_to_week` is a Monday local calendar `date`, required only for a fine and checked as ISO weekday one.
+- `related_action_id` optionally links an independent fine to its originating warn or strike. A warning/strike and its fine remain independently voidable and fully auditable: voiding its related action never voids the fine, which must be explicitly voided to stop affecting a live bonus.
 - `converted_to_strike_id` links historical warns to their generated strike; `triggered_by_warn_id` on a generated strike identifies the third warn which caused conversion.
 - `generated_from_warns` distinguishes automatic from direct strikes.
 - Void audit fields: `voided_at`, `voided_by`, and mandatory `void_reason`.
@@ -63,8 +63,8 @@ Profile, inclusive local start/end dates, reason, creator, timestamp, plus the s
 
 - `bonus_settings`: a singleton row with default settings: 300 weekly minutes, peak 22:00–04:00, 30 active minutes, targets, 50/25/10/15 weights, three days inactivity threshold, three warns per strike, and three critical strikes.
 - `bonus_tiers`: normalized ordered score ranges and integer base amounts, seeded with 85→60000, 75→55000, 65→50000, 50→40000, otherwise 20000.
-- `bonus_runs`: unique Monday week start, `draft|finalized|paid` status, creator/timestamps, and JSONB snapshot of validated configuration and tiers. A draft may be calculated again; finalized data is never recalculated.
-- `bonus_results`: one per run and profile with raw metrics in minutes/counts, score components, score, base amount, active-fine total, recommended final amount, review flags, optional final override amount/reason/by/at, and final amount. It is a historical metric snapshot, not a view over live tables.
+- `bonus_runs`: unique Monday week start, `draft|finalized` status, creator/timestamps, and JSONB snapshot of validated configuration and tiers. A draft may be calculated again; finalized data is never recalculated. Payment tracking is deliberately out of scope for this version.
+- `bonus_results`: one per run and profile with raw metrics in minutes/counts, score components, score, base amount, active-fine total, recommended final amount, review flag plus `review_resolved_at`, `review_resolved_by`, and `review_reason`, optional final override amount/reason/by/at, and final amount. It is a historical metric snapshot, not a view over live tables.
 
 ## Security and concurrency
 
@@ -72,7 +72,9 @@ All route handlers and server services call `requireAdmin()`. Tables are never a
 
 `record_disciplinary_action` is a `SECURITY DEFINER`, `search_path = ''` PostgreSQL function callable only by `service_role`. It validates that the supplied issuer is an active admin, obtains a transaction-scoped advisory lock keyed by target profile, inserts the requested action, locks that profile’s active warnings with `FOR UPDATE`, and converts exactly the first configured threshold warnings into one generated strike. It stores all converted warning links plus the third triggering warning. This serializes simultaneous admins and prevents four active warns or duplicate strikes.
 
-`void_disciplinary_action` uses the same profile lock. A direct strike void only voids that strike. Voiding a generated strike atomically finds every warning linked by `converted_to_strike_id`, voids exactly `triggered_by_warn_id`, and clears the conversion link on every other linked warning so each becomes active again. This is derived from the actual conversion set, never a hardcoded “first two/third” rule; with the default threshold of three it produces two active warns and zero active strikes. It records all void actors/timestamps/reasons. Fines are excluded from a live simulation as soon as voided; finalized bonus results are immutable and require a separately audited override rather than silent recalculation.
+`void_disciplinary_action` uses the same profile lock. A direct strike void only voids that strike. Voiding a generated strike atomically finds every warning linked by `converted_to_strike_id`, voids exactly `triggered_by_warn_id`, and clears the conversion link on every other linked warning so each becomes active again. This is derived from the actual conversion set, never a hardcoded “first two/third” rule; with the default threshold of three it produces two active warns and zero active strikes. It records all void actors/timestamps/reasons. A linked fine is not implicitly voided. Fines are excluded from a live simulation only when explicitly voided; finalized bonus results are immutable and require a separately audited override rather than silent recalculation.
+
+`save_bonus_settings` and `finalize_bonus_run` are also `SECURITY DEFINER`, empty-search-path, service-role-only functions. The settings function locks the singleton, validates all settings/tiers, replaces the singleton configuration and tier set atomically, and either commits all changes or none. Finalization locks the run, verifies it is draft, verifies every `review_required` result is resolved, creates all result/metric/config snapshots, then marks the run finalized in one transaction. Neither flow relies on a sequence of client-side Supabase JS writes.
 
 Functions use explicit `public.` references, an empty search path, and revoked `EXECUTE` from `anon`/`authenticated`, following current Supabase function security guidance.
 
@@ -90,7 +92,7 @@ All arithmetic uses integers except the display score; money is integer pesos an
 
 `peak = min(peakMinutes / peakTarget, 1) * peakWeight`; analogous capped components apply to kits, normal minutes, and active days. The total is 0–100. Tier selection is absolute, never zero-sum. `recommendedFinal = max(0, baseAmount - activeFineTotal)`. A missed five-hour goal or relevant absence adds an explicit review requirement and does not choose an official final amount. Ranking sorts score descending, then peak minutes descending, then RP name and UUID for deterministic ties.
 
-Finalization persists the complete config snapshot and metrics snapshot in one transaction. It warns the admin that values freeze. Overrides preserve the original recommendation, require a reason, and record actor/timestamp; they never replace calculation evidence.
+Finalization persists the complete config snapshot and metrics snapshot in the `finalize_bonus_run` transaction. It rejects any unresolved review and warns the admin that values freeze. A review resolution can approve the original recommended amount without an override, or set an override amount with an override reason. Both preserve original recommendation evidence and record actor/timestamp; neither silently replaces calculation evidence.
 
 ## Accessibility and responsiveness
 
