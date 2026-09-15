@@ -26,3 +26,6 @@ import "./dashboard-streaming.test.ts";
 import "./dashboard-warmup.test.ts";
 import "./ems-performance-export.test.ts";
 import "./staff-control.test.ts";
+import "./bonus.test.ts";
+import "./bonus-runs.test.ts";
+import "./bonus-presentation.test.ts";

@@ -180,3 +180,12 @@ test("staff query and warn preview validate only server-safe contracts", () => {
   assert.deepEqual(previewWarnAction(2, 3), { activeWarnsBefore: 2, activeWarnsAfterOrConversion: 0, warnsPerStrike: 3, willGenerateStrike: true });
   assert.deepEqual(previewWarnAction(1, 3), { activeWarnsBefore: 1, activeWarnsAfterOrConversion: 2, warnsPerStrike: 3, willGenerateStrike: false });
 });
+
+test("staff listing defaults to six cards and supports the missing webhook filter", () => {
+  assert.equal(parseStaffListQuery({}).pageSize, 6);
+  const source: StaffAggregationSource = { profiles: [{ id: "1", username: "configured", rp_name: "Configured", role: "ems", active: true, created_at: "2026-09-01T12:00:00Z", webhook_configured: true }, { id: "2", username: "missing", rp_name: "Missing", role: "ems", active: true, created_at: "2026-09-01T12:00:00Z" }], shifts: [], deliveries: [], actions: [], absences: [], settings: { weekly_goal_minutes: 300, warns_per_strike: 3, critical_strikes: 3, inactivity_alert_days: 3 } };
+  const result = aggregateStaff(source, parseStaffListQuery({ filter: "missing-webhook" }), local("2026-09-16T18:00:00Z"));
+  assert.deepEqual(result.items.map((item) => item.profile.id), ["2"]);
+  assert.equal(result.summary.missingWebhook, 1);
+  assert.equal(result.items[0]?.webhookConfigured, false);
+});

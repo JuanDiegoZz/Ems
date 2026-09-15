@@ -1,4 +1,4 @@
-export type StaffFilter = "all" | "attention" | "inactive" | "goal" | "critical";
+export type StaffFilter = "all" | "attention" | "inactive" | "goal" | "critical" | "missing-webhook";
 
 export function summaryFilter(filter: StaffFilter) { return filter; }
 

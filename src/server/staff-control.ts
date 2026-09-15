@@ -9,13 +9,13 @@ import { activeDays, inactiveCalendarDays, splitShiftMinutes, weekRange, weeklyG
 import { attentionPriority, inactivityLabel, staffStatus } from "../lib/staff-control/status.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const FILTERS = ["all", "attention", "inactive", "goal", "critical"] as const;
+const FILTERS = ["all", "attention", "inactive", "goal", "critical", "missing-webhook"] as const;
 type StaffFilter = typeof FILTERS[number];
 type ActionType = "warn" | "strike" | "fine";
 export class StaffControlError extends Error { readonly code: "UNAUTHORIZED" | "FORBIDDEN" | "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "INTERNAL_ERROR"; constructor(code: "UNAUTHORIZED" | "FORBIDDEN" | "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "INTERNAL_ERROR", message: string) { super(message); this.code = code; this.name = "StaffControlError"; } }
 export type StaffListQuery = { q: string; filter: StaffFilter; page: number; pageSize: number };
 export type StaffAggregationSource = {
-  profiles: Array<{ id: string; username: string; rp_name: string; role: "admin" | "ems"; active: boolean; created_at: string }>;
+  profiles: Array<{ id: string; username: string; rp_name: string; role: "admin" | "ems"; active: boolean; created_at: string; webhook_configured?: boolean }>;
   shifts: Array<{ profile_id: string; started_at: string; ended_at: string | null }>;
   deliveries: Array<{ delivered_by: string; occurred_at: string }>;
   actions: Array<{ id: string; profile_id: string; type: ActionType; fine_amount: number | null; applies_to_week: string | null; voided_at: string | null }>;
@@ -34,7 +34,7 @@ function localDate(value: Date) { return new Intl.DateTimeFormat("en-CA", { time
 export function parseStaffListQuery(input: Record<string, string | undefined>): StaffListQuery {
   const filter = input.filter ?? "all";
   if (!FILTERS.includes(filter as StaffFilter)) fail("VALIDATION_ERROR", "Filtro inválido");
-  const page = Number(input.page ?? "1"); const pageSize = Number(input.pageSize ?? "20");
+  const page = Number(input.page ?? "1"); const pageSize = Number(input.pageSize ?? "6");
   if (!Number.isInteger(page) || page < 1) fail("VALIDATION_ERROR", "Página inválida");
   if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) fail("VALIDATION_ERROR", "Tamaño de página inválido");
   return { q: (input.q ?? "").trim().slice(0, 80), filter: filter as StaffFilter, page, pageSize };
@@ -73,16 +73,18 @@ export function aggregateStaff(source: StaffAggregationSource, query: StaffListQ
 
 async function source(now: Date): Promise<StaffAggregationSource> {
   const client = createSupabaseAdminClient(); const range = weekRange(now); const today = localDate(now);
-  const [profiles, shifts, deliveries, actions, absences, settings] = await Promise.all([
+  const [profiles, shifts, deliveries, actions, absences, settings, webhooks] = await Promise.all([
     client.from("profiles").select("id, username, rp_name, role, active, created_at").in("role", [...operationalStaffRoles]).eq("active", true),
     client.from("ems_shifts").select("profile_id, started_at, ended_at").lt("started_at", range.end.toISOString()),
     client.from("deliveries").select("delivered_by, occurred_at").gte("occurred_at", range.start.toISOString()).lt("occurred_at", range.end.toISOString()),
     client.from("disciplinary_actions").select("id, profile_id, type, fine_amount, applies_to_week, voided_at").is("voided_at", null).or("type.neq.warn,converted_to_strike_id.is.null"),
     client.from("justified_absences").select("profile_id, starts_on, ends_on, voided_at").is("voided_at", null).lte("starts_on", today),
     client.from("bonus_settings").select("weekly_goal_minutes, warns_per_strike, critical_strikes, inactivity_alert_days").eq("id", true).single(),
+    client.from("ems_discord_webhooks").select("profile_id"),
   ]);
-  if (profiles.error || shifts.error || deliveries.error || actions.error || absences.error || settings.error || !settings.data) dbError(profiles.error ?? shifts.error ?? deliveries.error ?? actions.error ?? absences.error ?? settings.error);
-  return { profiles: profiles.data as StaffAggregationSource["profiles"], shifts: shifts.data as StaffAggregationSource["shifts"], deliveries: deliveries.data as StaffAggregationSource["deliveries"], actions: actions.data as StaffAggregationSource["actions"], absences: absences.data as StaffAggregationSource["absences"], settings: settings.data as StaffAggregationSource["settings"] };
+  if (profiles.error || shifts.error || deliveries.error || actions.error || absences.error || settings.error || webhooks.error || !settings.data) dbError(profiles.error ?? shifts.error ?? deliveries.error ?? actions.error ?? absences.error ?? settings.error ?? webhooks.error);
+  const configured = new Set((webhooks.data ?? []).map((item) => item.profile_id as string));
+  return { profiles: (profiles.data ?? []).map((profile) => ({ ...profile, webhook_configured: configured.has(profile.id) })) as StaffAggregationSource["profiles"], shifts: shifts.data as StaffAggregationSource["shifts"], deliveries: deliveries.data as StaffAggregationSource["deliveries"], actions: actions.data as StaffAggregationSource["actions"], absences: absences.data as StaffAggregationSource["absences"], settings: settings.data as StaffAggregationSource["settings"] };
 }
 
 export async function listStaff(input: Record<string, string | undefined>, now = new Date()) { await admin(); return aggregateStaffContract(await source(now), parseStaffListQueryContract(input), now); }
