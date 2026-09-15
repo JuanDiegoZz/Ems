@@ -1,0 +1,99 @@
+import "server-only";
+
+import { requireAdmin } from "../lib/auth/session.ts";
+import { operationalStaffRoles } from "../lib/auth/operational-staff.ts";
+import { normalizePersonName } from "../lib/normalization/person.ts";
+import { createSupabaseAdminClient } from "../lib/supabase/admin.ts";
+import { aggregateStaff as aggregateStaffContract, parseStaffListQuery as parseStaffListQueryContract, previewWarnAction as previewWarnActionContract } from "../lib/staff-control/aggregation.ts";
+import { activeDays, inactiveCalendarDays, splitShiftMinutes, weekRange, weeklyGoal } from "../lib/staff-control/calendar.ts";
+import { attentionPriority, inactivityLabel, staffStatus } from "../lib/staff-control/status.ts";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const FILTERS = ["all", "attention", "inactive", "goal", "critical"] as const;
+type StaffFilter = typeof FILTERS[number];
+type ActionType = "warn" | "strike" | "fine";
+export class StaffControlError extends Error { readonly code: "UNAUTHORIZED" | "FORBIDDEN" | "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "INTERNAL_ERROR"; constructor(code: "UNAUTHORIZED" | "FORBIDDEN" | "VALIDATION_ERROR" | "NOT_FOUND" | "CONFLICT" | "INTERNAL_ERROR", message: string) { super(message); this.code = code; this.name = "StaffControlError"; } }
+export type StaffListQuery = { q: string; filter: StaffFilter; page: number; pageSize: number };
+export type StaffAggregationSource = {
+  profiles: Array<{ id: string; username: string; rp_name: string; role: "admin" | "ems"; active: boolean; created_at: string }>;
+  shifts: Array<{ profile_id: string; started_at: string; ended_at: string | null }>;
+  deliveries: Array<{ delivered_by: string; occurred_at: string }>;
+  actions: Array<{ id: string; profile_id: string; type: ActionType; fine_amount: number | null; applies_to_week: string | null; voided_at: string | null }>;
+  absences: Array<{ profile_id: string; starts_on: string; ends_on: string; voided_at: string | null }>;
+  settings: { weekly_goal_minutes: number; warns_per_strike: number; critical_strikes: number; inactivity_alert_days: number };
+};
+
+function fail(code: StaffControlError["code"], message: string): never { throw new StaffControlError(code, message); }
+function assertUuid(value: unknown, label = "ID") { if (typeof value !== "string" || !UUID.test(value)) fail("VALIDATION_ERROR", `${label} inválido`); return value; }
+function dateOnly(value: unknown, label: string) { if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) fail("VALIDATION_ERROR", `${label} inválida`); const [year, month, day] = value.split("-").map(Number); if (new Date(Date.UTC(year, month - 1, day)).toISOString().slice(0, 10) !== value) fail("VALIDATION_ERROR", `${label} inválida`); return value; }
+function monday(value: unknown) { const date = dateOnly(value, "Semana"); if (new Date(`${date}T12:00:00Z`).getUTCDay() !== 1) fail("VALIDATION_ERROR", "La semana debe iniciar en lunes"); return date; }
+async function admin() { try { return await requireAdmin(); } catch (error) { const message = error instanceof Error ? error.message : ""; if (message === "Unauthorized") fail("UNAUTHORIZED", "No autorizado"); if (message === "Forbidden") fail("FORBIDDEN", "No tienes permisos administrativos"); fail("INTERNAL_ERROR", "No se pudo validar la sesión"); } }
+function dbError(error: unknown): never { void error; return fail("INTERNAL_ERROR", "No se pudo consultar el control de personal"); }
+function localDate(value: Date) { return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.APP_TIMEZONE && process.env.APP_TIMEZONE !== "undefined" ? process.env.APP_TIMEZONE : "America/Monterrey", year: "numeric", month: "2-digit", day: "2-digit" }).format(value); }
+
+export function parseStaffListQuery(input: Record<string, string | undefined>): StaffListQuery {
+  const filter = input.filter ?? "all";
+  if (!FILTERS.includes(filter as StaffFilter)) fail("VALIDATION_ERROR", "Filtro inválido");
+  const page = Number(input.page ?? "1"); const pageSize = Number(input.pageSize ?? "20");
+  if (!Number.isInteger(page) || page < 1) fail("VALIDATION_ERROR", "Página inválida");
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) fail("VALIDATION_ERROR", "Tamaño de página inválido");
+  return { q: (input.q ?? "").trim().slice(0, 80), filter: filter as StaffFilter, page, pageSize };
+}
+
+export function previewWarnAction(activeWarnsBefore: number, warnsPerStrike: number) {
+  const willGenerateStrike = warnsPerStrike > 0 && activeWarnsBefore + 1 >= warnsPerStrike;
+  return { activeWarnsBefore, activeWarnsAfterOrConversion: willGenerateStrike ? 0 : activeWarnsBefore + 1, warnsPerStrike, willGenerateStrike };
+}
+
+export function aggregateStaff(source: StaffAggregationSource, query: StaffListQuery, now = new Date()) {
+  const range = weekRange(now); const weekStart = range.start.toISOString().slice(0, 10); const today = localDate(now);
+  const all = source.profiles.filter((profile) => profile.active && operationalStaffRoles.includes(profile.role)).map((profile) => {
+    const shifts = source.shifts.filter((shift) => shift.profile_id === profile.id);
+    const minutes = shifts.reduce((total, shift) => total + splitShiftMinutes({ startedAt: shift.started_at, endedAt: shift.ended_at }, range, { start: "22:00", end: "04:00" }, now).totalMinutes, 0);
+    const peakMinutes = shifts.reduce((total, shift) => total + splitShiftMinutes({ startedAt: shift.started_at, endedAt: shift.ended_at }, range, { start: "22:00", end: "04:00" }, now).peakMinutes, 0);
+    const activeActions = source.actions.filter((action) => action.profile_id === profile.id && action.voided_at === null);
+    const activeWarns = activeActions.filter((action) => action.type === "warn").length;
+    const activeStrikes = activeActions.filter((action) => action.type === "strike").length;
+    const activeFineTotal = activeActions.filter((action) => action.type === "fine" && action.applies_to_week === weekStart).reduce((sum, action) => sum + (action.fine_amount ?? 0), 0);
+    const lastActivityAt = shifts.reduce<string | null>((latest, shift) => !latest || shift.started_at > latest ? shift.started_at : latest, null) ?? profile.created_at;
+    const absences = source.absences.filter((absence) => absence.profile_id === profile.id && absence.voided_at === null);
+    const inactivityDays = inactiveCalendarDays(lastActivityAt, now, absences.map((absence) => ({ startsOn: absence.starts_on, endsOn: absence.ends_on })), process.env.APP_TIMEZONE || "America/Monterrey");
+    const goal = weeklyGoal(minutes, source.settings.weekly_goal_minutes);
+    const status = staffStatus({ activeStrikes, activeWarns, inactivityDays, weeklyGoalMet: goal.met, warnsPerStrike: source.settings.warns_per_strike, criticalStrikes: source.settings.critical_strikes, inactivityThreshold: source.settings.inactivity_alert_days });
+    const currentAbsences = absences.filter((absence) => absence.starts_on <= today && absence.ends_on >= today);
+    const permissionUntil = currentAbsences.reduce<string | null>((end, absence) => !end || absence.ends_on > end ? absence.ends_on : end, null);
+    return { profile: { id: profile.id, rpName: profile.rp_name, role: profile.role }, status: { key: status.level, label: status.label, reviewLabel: status.reviewLabel, reasons: status.reasons, attentionPriority: attentionPriority({ activeStrikes, activeWarns, inactivityDays, weeklyGoalMet: goal.met, warnsPerStrike: source.settings.warns_per_strike, criticalStrikes: source.settings.critical_strikes, inactivityThreshold: source.settings.inactivity_alert_days }) }, week: { weeklyMinutes: minutes, peakMinutes, activeDays: activeDays(shifts.map((shift) => ({ startedAt: shift.started_at, endedAt: shift.ended_at })), range, 30, now), goalMet: goal.met, targetMinutes: goal.targetMinutes }, discipline: { activeWarns, activeStrikes, warnsPerStrike: source.settings.warns_per_strike, criticalStrikes: source.settings.critical_strikes, activeFineTotal }, activity: { inactivityDays, inactivityLabel: inactivityLabel(inactivityDays), lastActivityAt }, absence: { currentlyJustified: currentAbsences.length > 0, permissionUntil } };
+  });
+  const summary = { active: all.filter((item) => item.status.key === "normal").length, attention: all.filter((item) => item.status.key !== "normal").length, critical: all.filter((item) => item.status.key === "critical").length, goalMissed: all.filter((item) => !item.week.goalMet).length, inactive: all.filter((item) => item.activity.inactivityDays >= source.settings.inactivity_alert_days).length };
+  const normalized = normalizePersonName(query.q);
+  const filtered = all.filter((item) => (!normalized || normalizePersonName(`${item.profile.rpName} ${source.profiles.find((profile) => profile.id === item.profile.id)?.username ?? ""}`).includes(normalized)) && (query.filter === "all" || query.filter === "critical" && item.status.key === "critical" || query.filter === "attention" && item.status.key !== "normal" || query.filter === "inactive" && item.activity.inactivityDays >= source.settings.inactivity_alert_days || query.filter === "goal" && !item.week.goalMet)).sort((left, right) => left.status.attentionPriority - right.status.attentionPriority || normalizePersonName(left.profile.rpName).localeCompare(normalizePersonName(right.profile.rpName)) || left.profile.id.localeCompare(right.profile.id));
+  const total = filtered.length; const totalPages = Math.max(1, Math.ceil(total / query.pageSize)); const page = Math.min(query.page, totalPages); const start = (page - 1) * query.pageSize;
+  return { items: filtered.slice(start, start + query.pageSize), page, pageSize: query.pageSize, total, totalPages, summary, weekStart };
+}
+
+async function source(now: Date): Promise<StaffAggregationSource> {
+  const client = createSupabaseAdminClient(); const range = weekRange(now); const today = localDate(now);
+  const [profiles, shifts, deliveries, actions, absences, settings] = await Promise.all([
+    client.from("profiles").select("id, username, rp_name, role, active, created_at").in("role", [...operationalStaffRoles]).eq("active", true),
+    client.from("ems_shifts").select("profile_id, started_at, ended_at").lt("started_at", range.end.toISOString()),
+    client.from("deliveries").select("delivered_by, occurred_at").gte("occurred_at", range.start.toISOString()).lt("occurred_at", range.end.toISOString()),
+    client.from("disciplinary_actions").select("id, profile_id, type, fine_amount, applies_to_week, voided_at").is("voided_at", null).or("type.neq.warn,converted_to_strike_id.is.null"),
+    client.from("justified_absences").select("profile_id, starts_on, ends_on, voided_at").is("voided_at", null).lte("starts_on", today),
+    client.from("bonus_settings").select("weekly_goal_minutes, warns_per_strike, critical_strikes, inactivity_alert_days").eq("id", true).single(),
+  ]);
+  if (profiles.error || shifts.error || deliveries.error || actions.error || absences.error || settings.error || !settings.data) dbError(profiles.error ?? shifts.error ?? deliveries.error ?? actions.error ?? absences.error ?? settings.error);
+  return { profiles: profiles.data as StaffAggregationSource["profiles"], shifts: shifts.data as StaffAggregationSource["shifts"], deliveries: deliveries.data as StaffAggregationSource["deliveries"], actions: actions.data as StaffAggregationSource["actions"], absences: absences.data as StaffAggregationSource["absences"], settings: settings.data as StaffAggregationSource["settings"] };
+}
+
+export async function listStaff(input: Record<string, string | undefined>, now = new Date()) { await admin(); return aggregateStaffContract(await source(now), parseStaffListQueryContract(input), now); }
+export async function getStaffFile(profileId: unknown, input: Record<string, string | undefined>, now = new Date()) { await admin(); const id = assertUuid(profileId, "EMS"); const list = aggregateStaffContract(await source(now), { ...parseStaffListQueryContract(input), page: 1, pageSize: 100 }, now); const staff = list.items.find((item) => item.profile.id === id); if (!staff) fail("NOT_FOUND", "EMS no encontrado"); const client = createSupabaseAdminClient(); const page = parseStaffListQueryContract({ page: input.historyPage ?? "1", pageSize: input.historyPageSize ?? "20" }); const [actions, shifts] = await Promise.all([client.from("disciplinary_actions").select("id, type, reason, fine_amount, applies_to_week, related_action_id, issued_at, generated_from_warns, triggered_by_warn_id, voided_at, void_reason").eq("profile_id", id).order("issued_at", { ascending: false }).range((page.page - 1) * page.pageSize, page.page * page.pageSize - 1), client.from("ems_shifts").select("id, started_at, ended_at").eq("profile_id", id).order("started_at", { ascending: false }).limit(20)]); if (actions.error || shifts.error) dbError(actions.error ?? shifts.error); return { staff, disciplineHistory: { items: actions.data ?? [], page: page.page, pageSize: page.pageSize }, shifts: shifts.data ?? [], bonuses: { available: false } }; }
+export async function previewAction(profileId: unknown, type: unknown) { await admin(); const id = assertUuid(profileId, "EMS"); if (type !== "warn" && type !== "strike" && type !== "fine") fail("VALIDATION_ERROR", "Tipo inválido"); const client = createSupabaseAdminClient(); const [profile, settings, warns] = await Promise.all([client.from("profiles").select("id").eq("id", id).maybeSingle(), client.from("bonus_settings").select("warns_per_strike").eq("id", true).single(), client.from("disciplinary_actions").select("id", { count: "exact", head: true }).eq("profile_id", id).eq("type", "warn").is("voided_at", null).is("converted_to_strike_id", null)]); const setting = settings.data; if (profile.error || settings.error || warns.error || !setting) dbError(profile.error ?? settings.error ?? warns.error); if (!profile.data) fail("NOT_FOUND", "EMS no encontrado"); return type === "warn" ? previewWarnActionContract(warns.count ?? 0, setting.warns_per_strike) : { activeWarnsBefore: warns.count ?? 0, activeWarnsAfterOrConversion: warns.count ?? 0, warnsPerStrike: setting.warns_per_strike, willGenerateStrike: false }; }
+export async function issueAction(input: { profileId?: unknown; type?: unknown; reason?: unknown; fineAmount?: unknown; appliesToWeek?: unknown; relatedActionId?: unknown }) { const actor = await admin(); const profileId = assertUuid(input.profileId, "EMS"); if (input.type !== "warn" && input.type !== "strike" && input.type !== "fine") fail("VALIDATION_ERROR", "Tipo inválido"); const reason = typeof input.reason === "string" ? input.reason.trim() : ""; if (!reason) fail("VALIDATION_ERROR", "Motivo requerido"); const fineAmount = input.type === "fine" ? input.fineAmount : null; const appliesToWeek = input.type === "fine" ? monday(input.appliesToWeek) : null; if (input.type === "fine" && (!Number.isInteger(fineAmount) || (fineAmount as number) <= 0)) fail("VALIDATION_ERROR", "Monto inválido"); const relatedActionId = input.relatedActionId === undefined || input.relatedActionId === null ? null : assertUuid(input.relatedActionId, "Sanción relacionada"); const result = await createSupabaseAdminClient().rpc("record_disciplinary_action", { p_profile_id: profileId, p_type: input.type, p_reason: reason, p_issued_by: actor.id, p_fine_amount: fineAmount, p_applies_to_week: appliesToWeek, p_related_action_id: relatedActionId }); if (result.error || !result.data?.[0]) { if (result.error?.code === "P0002") fail("NOT_FOUND", "EMS no encontrado"); if (result.error?.code === "42501") fail("FORBIDDEN", "No autorizado"); dbError(result.error); } const action = result.data[0] as { action_id: string; generated_strike_id: string | null; active_strike_count: number }; return { actionId: action.action_id, generatedStrikeId: action.generated_strike_id, activeStrikes: action.active_strike_count, nowCritical: action.active_strike_count >= 3 }; }
+export async function voidAction(actionId: unknown, voidReason: unknown) { const actor = await admin(); const id = assertUuid(actionId, "Sanción"); const reason = typeof voidReason === "string" ? voidReason.trim() : ""; if (!reason) fail("VALIDATION_ERROR", "Motivo de anulación requerido"); const result = await createSupabaseAdminClient().rpc("void_disciplinary_action", { p_action_id: id, p_voided_by: actor.id, p_void_reason: reason }); if (result.error || !result.data?.[0]) { if (result.error?.code === "P0002") fail("NOT_FOUND", "Sanción no encontrada"); if (result.error?.code === "42501") fail("FORBIDDEN", "No autorizado"); if (result.error?.message.includes("inválida")) fail("CONFLICT", "La sanción no puede anularse"); dbError(result.error); } return result.data[0]; }
+export async function recordAbsence(input: { profileId?: unknown; startsOn?: unknown; endsOn?: unknown; reason?: unknown }) { const actor = await admin(); const profileId = assertUuid(input.profileId, "EMS"); const startsOn = dateOnly(input.startsOn, "Fecha inicial"); const endsOn = dateOnly(input.endsOn, "Fecha final"); if (endsOn < startsOn) fail("VALIDATION_ERROR", "La fecha final debe ser posterior o igual"); const reason = typeof input.reason === "string" ? input.reason.trim() : ""; if (!reason) fail("VALIDATION_ERROR", "Motivo requerido"); const result = await createSupabaseAdminClient().from("justified_absences").insert({ profile_id: profileId, starts_on: startsOn, ends_on: endsOn, reason, created_by: actor.id }).select("id, profile_id, starts_on, ends_on, reason, created_at").single(); if (result.error || !result.data) dbError(result.error); return result.data; }
+export async function voidAbsence(absenceId: unknown, voidReason: unknown) { const actor = await admin(); const id = assertUuid(absenceId, "Permiso"); const reason = typeof voidReason === "string" ? voidReason.trim() : ""; if (!reason) fail("VALIDATION_ERROR", "Motivo de anulación requerido"); const result = await createSupabaseAdminClient().from("justified_absences").update({ voided_at: new Date().toISOString(), voided_by: actor.id, void_reason: reason }).eq("id", id).is("voided_at", null).select("id").maybeSingle(); if (result.error) dbError(result.error); if (!result.data) fail("NOT_FOUND", "Permiso no encontrado"); return { id, voided: true }; }
+export async function getStaffSettings() { await admin(); const result = await createSupabaseAdminClient().from("bonus_settings").select("*").eq("id", true).single(); if (result.error || !result.data) dbError(result.error); return result.data; }
+
+export async function listStaffAbsences(profileId: unknown) { await admin(); const id = assertUuid(profileId, "EMS"); const result = await createSupabaseAdminClient().from("justified_absences").select("id, starts_on, ends_on, reason, created_at, voided_at, void_reason").eq("profile_id", id).order("created_at", { ascending: false }).limit(20); if (result.error) dbError(result.error); return result.data ?? []; }
+export async function updateStaffSettings(input: { settings?: unknown; tiers?: unknown }) { const actor = await admin(); if (!input.settings || !input.tiers) fail("VALIDATION_ERROR", "Configuración inválida"); const result = await createSupabaseAdminClient().rpc("save_bonus_settings", { p_actor: actor.id, p_settings: input.settings, p_tiers: input.tiers }); if (result.error) fail("VALIDATION_ERROR", "No se pudo guardar la configuración"); return getStaffSettings(); }
+export function staffErrorResponse(error: unknown) { if (error instanceof StaffControlError) return { status: error.code === "UNAUTHORIZED" ? 401 : error.code === "FORBIDDEN" ? 403 : error.code === "NOT_FOUND" ? 404 : error.code === "CONFLICT" ? 409 : error.code === "VALIDATION_ERROR" ? 400 : 500, body: { code: error.code, error: error.message } }; return { status: 500, body: { code: "INTERNAL_ERROR", error: "No se pudo procesar la solicitud" } }; }

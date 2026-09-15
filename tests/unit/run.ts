@@ -25,3 +25,4 @@ import "./login-feedback.test.ts";
 import "./dashboard-streaming.test.ts";
 import "./dashboard-warmup.test.ts";
 import "./ems-performance-export.test.ts";
+import "./staff-control.test.ts";

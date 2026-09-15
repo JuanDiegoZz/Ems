@@ -1,0 +1,4 @@
+import { NextResponse } from "next/server";
+import { issueAction, previewAction, staffErrorResponse } from "@/server/staff-control";
+export async function GET(request: Request) { const query = new URL(request.url).searchParams; try { return NextResponse.json(await previewAction(query.get("profileId"), query.get("type")), { headers: { "Cache-Control": "private, no-store" } }); } catch (error) { const mapped = staffErrorResponse(error); return NextResponse.json(mapped.body, { status: mapped.status }); } }
+export async function POST(request: Request) { const body = await request.json().catch(() => null); try { return NextResponse.json(await issueAction(body ?? {}), { status: 201 }); } catch (error) { const mapped = staffErrorResponse(error); return NextResponse.json(mapped.body, { status: mapped.status }); } }

@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local visual-workflow session metadata (may contain ephemeral session keys)
+/.superpowers/

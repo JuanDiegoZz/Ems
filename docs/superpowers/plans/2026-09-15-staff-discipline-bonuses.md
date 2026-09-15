@@ -205,7 +205,7 @@ Expected: PASS.
 - [ ] **Step 1: Write failing time/status tests**
 
 ```ts
-test("splits 21:00–02:00 into one normal and three peak hours", () => assert.deepEqual(splitShiftMinutes(shift, peak), { peakMinutes: 180, normalMinutes: 60 }));
+test("splits 21:00–02:00 into one normal and four peak hours", () => assert.deepEqual(splitShiftMinutes(shift, peak), { peakMinutes: 240, normalMinutes: 60 }));
 test("absence pauses rather than resets inactivity", () => assert.equal(inactiveCalendarDays(monday, friday, [tuesdayThroughThursday]), 1));
 test("three strikes exposes critical text", () => assert.match(staffStatus({ strikes: 3, warns: 0 }).detail, /Strikes 3\/3/));
 ```
@@ -218,7 +218,7 @@ Expected: FAIL because calendar/status exports are absent.
 
 - [ ] **Step 3: Implement pure local-calendar calculations**
 
-Build Monday ranges and local day boundaries without host timezone parsing. Clip interval slices to week boundaries and split every local 22:00/04:00 edge. Accumulate a day before testing active-minute threshold. In inactivity, absence-covered days neither add to the consecutive count nor reset it; they pause it. Generate accessible normal/attention/risk/critical, goal, warning-threshold, permission, and inactivity text labels.
+Build Monday ranges and local day boundaries without host timezone parsing. Clip interval slices to week boundaries and split every local 22:00/04:00 edge, preserving the invariant that peak plus normal minutes equal every clipped shift minute. Accumulate a day before testing active-minute threshold. In inactivity, absence-covered days neither add to the consecutive count nor reset it; they pause it. Generate accessible normal/attention/risk/critical, goal, warning-threshold, permission, and inactivity text labels.
 
 - [ ] **Step 4: Add the required boundary matrix**
 

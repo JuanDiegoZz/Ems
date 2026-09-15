@@ -1,0 +1,5 @@
+import { NextResponse } from "next/server";
+import { listStaffAbsences, recordAbsence, staffErrorResponse, voidAbsence } from "@/server/staff-control";
+export async function GET(request: Request) { try { return NextResponse.json(await listStaffAbsences(new URL(request.url).searchParams.get("profileId")), { headers: { "Cache-Control": "private, no-store" } }); } catch (error) { const mapped = staffErrorResponse(error); return NextResponse.json(mapped.body, { status: mapped.status }); } }
+export async function POST(request: Request) { const body = await request.json().catch(() => null); try { return NextResponse.json(await recordAbsence(body ?? {}), { status: 201 }); } catch (error) { const mapped = staffErrorResponse(error); return NextResponse.json(mapped.body, { status: mapped.status }); } }
+export async function DELETE(request: Request) { const body = await request.json().catch(() => null); try { return NextResponse.json(await voidAbsence(body?.absenceId, body?.voidReason)); } catch (error) { const mapped = staffErrorResponse(error); return NextResponse.json(mapped.body, { status: mapped.status }); } }

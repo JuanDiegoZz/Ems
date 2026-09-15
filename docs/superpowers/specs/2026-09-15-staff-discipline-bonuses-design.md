@@ -80,7 +80,7 @@ Functions use explicit `public.` references, an empty search path, and revoked `
 
 ## Calendar and analytics
 
-Weeks are `[Monday 00:00, next Monday 00:00)` in `APP_TIMEZONE`. The existing shift helper is extended with pure local-calendar range construction and interval splitting. Open shifts use supplied `now` only for present-week simulation; no row is closed. Each shift is clipped to the week and split at local 22:00 and 04:00 boundaries, so cross-midnight shifts count peak and normal minutes exactly.
+Weeks are `[Monday 00:00, next Monday 00:00)` in `APP_TIMEZONE`. The existing shift helper is extended with pure local-calendar range construction and interval splitting. Open shifts use supplied `now` only for present-week simulation; no row is closed. Each shift is clipped to the week and split at local 22:00 and 04:00 boundaries, so cross-midnight shifts count peak and normal minutes exactly. The invariant is `peakMinutes + normalMinutes = clipped shift minutes`: for example, 21:00–02:00 is 240 peak minutes and 60 normal minutes, never a lossy four-hour total.
 
 Activity days use local calendar intervals and require accumulated shift minutes at or above the configured minimum. Inactivity uses the last real `ems_shifts.started_at` reference, or `profiles.created_at` if absent, expressed in local calendar days. Justified-absence days pause the consecutive inactivity clock rather than reset it or create artificial activity: a Monday last shift, Tuesday–Thursday approved absence, and Friday without activity yields one inactive day. Weekly goal is separately visible at 299/300/301 minutes.
 
