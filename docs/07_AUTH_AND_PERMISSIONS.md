@@ -120,6 +120,14 @@ No confiar únicamente en invalidar UI.
 
 Cada request protegido debe verificar `profiles.active` para que un usuario ya autenticado quede bloqueado al ser desactivado.
 
+## Staff Discipline + Weekly Bonuses
+
+El Centro de Personal, disciplina, permisos, configuración de bonos, reviews,
+overrides y finalización requieren `requireAdmin()` server-side. Sus tablas y
+RPCs no tienen grants para `anon`/`authenticated`; el cliente sólo recibe DTOs
+sanitizados. Ver [`docs/24_STAFF_DISCIPLINE_AND_BONUSES.md`](24_STAFF_DISCIPLINE_AND_BONUSES.md)
+para RLS, grants, snapshots e invariantes.
+
 ## Bitácora y rendimiento
 
 EMS y admin activos pueden abrir/cerrar exclusivamente su propia bitácora. Cerrar sesión no altera turnos. Las rutas de webhook y `/admin/ems-performance` requieren `requireAdmin()` en servidor; un EMS nunca recibe ni puede enumerar configuraciones o métricas de otros perfiles.

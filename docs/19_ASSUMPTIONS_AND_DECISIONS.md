@@ -80,3 +80,10 @@ Búsquedas consultan el servidor y ven nuevos datos de cualquier ciudad/disposit
 ## D-012 — Sin dominio pagado
 
 Usar `*.vercel.app` inicialmente.
+
+## D-013 — Histórico de bonos congelado
+
+Una corrida de bonos finalizada conserva snapshot de configuración, métricas,
+recomendación, override y monto final. Cambios posteriores de settings,
+turnos, entregas, multas o permisos sólo afectan nuevos borradores; no se
+recalcula silenciosamente el histórico. No se añade estado de pago en V1.

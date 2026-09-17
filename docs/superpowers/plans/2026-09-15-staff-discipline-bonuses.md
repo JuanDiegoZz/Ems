@@ -374,21 +374,21 @@ Expected: PASS.
 
 **Produces:** SQL-editor instructions, operator guide, and final evidence.
 
-- [ ] **Step 1: Document operations and exact SQL-editor process**
+- [x] **Step 1: Document operations and exact SQL-editor process**
 
 Document independent linked fines, their explicit-void rule, N-warning conversion/reversal, direct strike void, absence pause, local peak/active-day math, score/config/tiers, review approval/override blocking finalization, drafts/finalization, RPC security, and RLS. Include the complete contents of the new SQL migration as the exact material to paste into Supabase SQL Editor; never instruct the operator to paste a path or PowerShell command.
 
-- [ ] **Step 2: Execute complete automated verification**
+- [x] **Step 2: Execute complete automated verification**
 
 Run: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and `git diff --check`.
 
 Expected: every command exits 0; capture the suite total from output.
 
-- [ ] **Step 3: Execute browser QA**
+- [x] **Step 3: Execute browser QA**
 
 Run `pnpm dev`, authenticate as admin, then inspect staff center, file, sanction/void/absence, simulator, settings, finalized week and override at desktop plus 320/375/390/430 px. Confirm no horizontal document overflow, hydration warning, maximum-depth loop, AbortError, React loop, secret exposure, or unauthorized success. Confirm summary/search/filter results apply globally before pagination.
 
-- [ ] **Step 4: Report gaps honestly**
+- [x] **Step 4: Report gaps honestly**
 
 If Supabase migration or authenticated browser QA cannot run locally, record the exact unverified action and manual proof path. Do not push, deploy, merge, or alter historical migrations.
 
@@ -402,3 +402,7 @@ If Supabase migration or authenticated browser QA cannot run locally, record the
 - Simulator/configuration: Task 6.
 - Finalized snapshots and override audit: Task 7.
 - Documentation, manual migration, automated/browser verification: Task 8.
+
+## Estado de ejecución
+
+Tasks 1–8: CLOSED / VALIDATED en entorno local. La migration de producción y el deploy de producción no se han ejecutado.

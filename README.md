@@ -61,6 +61,7 @@ La aplicación debe ser extremadamente sencilla, mobile-first, usable desde PC, 
 22. `docs/20_HANDOFF_CHECKLIST.md`
 23. `docs/21_TARGET_REPOSITORY_TREE.md`
 24. `docs/22_REFERENCES.md`
+25. `docs/24_STAFF_DISCIPLINE_AND_BONUSES.md`
 
 ## Alcance de V1
 

@@ -139,3 +139,8 @@ Aunque el acceso de negocio sea server-only:
 Todas las estructuras y cambios se guardan en migraciones versionadas dentro de `supabase/migrations/`.
 
 No depender de cambios manuales permanentes en dashboard.
+
+El módulo Staff Discipline + Weekly Bonuses añade sus estructuras mediante
+`20260915000000_staff_discipline_and_bonuses.sql` y la corrección de auditoría
+`20260917000000_fix_bonus_review_audit.sql`, en ese orden. El procedimiento
+manual de producción está en [`docs/24_STAFF_DISCIPLINE_AND_BONUSES.md`](24_STAFF_DISCIPLINE_AND_BONUSES.md).
