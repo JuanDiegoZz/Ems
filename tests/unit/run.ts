@@ -29,3 +29,4 @@ import "./staff-control.test.ts";
 import "./bonus.test.ts";
 import "./bonus-runs.test.ts";
 import "./bonus-presentation.test.ts";
+import "./price-catalog.test.ts";
