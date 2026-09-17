@@ -11,6 +11,7 @@ import {
   type BonusTier,
 } from "../../src/lib/staff-control/bonus.ts";
 import { validateBonusSettings, validateBonusTiers } from "../../src/lib/staff-control/bonus-settings.ts";
+import { finalizeSnapshot, overrideResult, recalculate, resolveReview } from "../../src/lib/staff-control/bonus-finalization.ts";
 
 const settings: BonusSettings = {
   weeklyGoalMinutes: 300,
@@ -160,4 +161,34 @@ test("invalid metrics are rejected and money formatting is presentation-only", (
   assert.equal(formatPesos(0), "$0");
   assert.equal(formatPesos(5000), "$5,000");
   assert.equal(formatPesos(60000), "$60,000");
+});
+
+test("finalization preserves config and metric snapshots", () => {
+  const draft = { status: "draft" as const, configSnapshot: { settings: { peakWeight: 50 } }, results: [{ reviewRequired: false, reviewResolved: false, recommendedFinal: 60000 }] };
+  const finalized = finalizeSnapshot(draft);
+  assert.deepEqual(finalized.configSnapshot, draft.configSnapshot);
+  assert.equal(finalized.status, "finalized");
+});
+
+test("a finalized run cannot silently recalculate", () => {
+  assert.throws(() => recalculate({ status: "finalized" }), /finalizada|finalized/i);
+});
+
+test("override keeps recommendation and requires reason", () => {
+  const result = { recommendedFinal: 60000, finalAmount: null, reviewResolved: false };
+  assert.throws(() => overrideResult(result, 45000, ""), /motivo/i);
+  const adjusted = overrideResult(result, 45000, "Ajuste autorizado");
+  assert.equal(adjusted.recommendedFinal, 60000);
+  assert.equal(adjusted.finalAmount, 45000);
+});
+
+test("finalization rejects unresolved reviews", () => {
+  assert.throws(() => finalizeSnapshot({ status: "draft" as const, configSnapshot: {}, results: [{ reviewRequired: true, reviewResolved: false }] }), /revisiones|review/i);
+});
+
+test("approval resolves review without changing recommendation", () => {
+  const result = resolveReview({ recommendedFinal: 60000, finalAmount: null, reviewResolved: false }, "approved", "Meta revisada");
+  assert.equal(result.finalAmount, 60000);
+  assert.equal(result.recommendedFinal, 60000);
+  assert.equal(result.reviewResolved, true);
 });

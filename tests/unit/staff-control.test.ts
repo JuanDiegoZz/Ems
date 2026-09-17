@@ -52,6 +52,12 @@ test("discipline migration serializes conversion and protects RPC access", () =>
   assert.match(sql, /revoke all on function public\.record_disciplinary_action/i);
 });
 
+test("bonus review audit permits pending reasons and requires resolved audit", () => {
+  const sql = readFileSync(new URL("../../supabase/migrations/20260917000000_fix_bonus_review_audit.sql", import.meta.url), "utf8");
+  assert.match(sql, /review_resolved_at is null and review_resolved_by is null/i);
+  assert.match(sql, /review_resolved_at is not null and review_resolved_by is not null and length\(trim\(review_reason\)\) > 0/i);
+});
+
 test("week range is Monday-to-Monday at Monterrey local midnight", () => {
   assert.deepEqual(week("2026-09-14T06:00:00Z"), { start: local("2026-09-14T06:00:00Z"), end: local("2026-09-21T06:00:00Z") });
   assert.deepEqual(week("2026-09-21T05:59:59Z"), { start: local("2026-09-14T06:00:00Z"), end: local("2026-09-21T06:00:00Z") });
