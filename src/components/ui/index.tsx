@@ -1,6 +1,6 @@
 ﻿import type { InputHTMLAttributes, ReactNode } from "react";
 
-export type IconName = "home" | "users" | "history" | "user" | "shield" | "heart" | "badge" | "logout" | "upload" | "search" | "file" | "plus" | "edit" | "refresh" | "check" | "alert" | "settings" | "chevron" | "clock" | "activity" | "package" | "more" | "analytics";
+export type IconName = "home" | "users" | "history" | "user" | "shield" | "heart" | "badge" | "tags" | "badgeDollarSign" | "logout" | "upload" | "search" | "file" | "plus" | "edit" | "refresh" | "check" | "alert" | "settings" | "chevron" | "clock" | "activity" | "package" | "more" | "analytics";
 
 const paths: Record<IconName, string> = {
   home: "M3 11.5 12 4l9 7.5M5.5 10v9h13v-9M9 19v-5h6v5",
@@ -10,6 +10,8 @@ const paths: Record<IconName, string> = {
   shield: "M12 3 20 6v6c0 5-3.3 8-8 9-4.7-1-8-4-8-9V6l8-3ZM9 12l2 2 4-4",
   heart: "M20.8 8.8c0 5.2-8.8 10-8.8 10s-8.8-4.8-8.8-10A4.8 4.8 0 0 1 12 6a4.8 4.8 0 0 1 8.8 2.8Z",
   badge: "M7 3h10v18H7zM9 7h6M9 11h6M9 15h4",
+  tags: "M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.5 2.5 0 0 0 3.536 0l7.172-7.172a2.5 2.5 0 0 0 0-3.536ZM7 7h.01M17 2.83l4.17 4.17a2.12 2.12 0 0 1 0 3L10.83 20.34",
+  badgeDollarSign: "M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.78 4.78 4 4 0 0 1-6.74 0 4 4 0 0 1-4.78-4.78 4 4 0 0 1 0-6.74ZM16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6",
   logout: "M10 17l5-5-5-5M15 12H3M21 4v16",
   upload: "M12 16V4M7 9l5-5 5 5M4 20h16",
   search: "m21 21-4.4-4.4M10.8 18a7.2 7.2 0 1 0 0-14.4 7.2 7.2 0 0 0 0 14.4Z",
