@@ -39,6 +39,9 @@ export function weekRange(value = new Date(), timeZone = STAFF_TIME_ZONE): Local
   return { start: localDateTime(monday, timeZone), end: localDateTime(addDays(monday, 7), timeZone) };
 }
 
+export function localDateKey(value: Date | string, timeZone = STAFF_TIME_ZONE) { return dayKey(localDay(new Date(value), timeZone)); }
+export function localDayRange(value: Date | string, timeZone = STAFF_TIME_ZONE): LocalDateRange { const day = localDay(new Date(value), timeZone); return { start: localDateTime(day, timeZone), end: localDateTime(addDays(day, 1), timeZone) }; }
+
 export function splitShiftMinutes(shift: ShiftInterval, range: LocalDateRange, peak: PeakWindow, now = new Date(), timeZone = STAFF_TIME_ZONE) {
   const interval = clipped(shift, range, now);
   if (interval.end <= interval.start) return { peakMinutes: 0, normalMinutes: 0, totalMinutes: 0 };

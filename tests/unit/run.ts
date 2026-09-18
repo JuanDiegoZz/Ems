@@ -20,6 +20,7 @@ import "./operational-staff.test.ts";
 import "./global-search.test.ts";
 import "./recent-people.test.ts";
 import "./active-shift.test.ts";
+import "./admin-analytics.test.ts";
 import "./productivity-feedback.test.ts";
 import "./login-feedback.test.ts";
 import "./dashboard-streaming.test.ts";

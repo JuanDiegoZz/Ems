@@ -8,7 +8,7 @@ test("mobile navigation always has exactly five primary destinations", () => {
 
 test("only admins receive administration actions in More", () => {
   assert.deepEqual(mobileMoreItems("ems").map((item) => item.label), ["Historial", "Perfil", "Precios"]);
-  assert.deepEqual(mobileMoreItems("admin").map((item) => item.label), ["Historial", "Perfil", "Precios", "Personal EMS", "Bonos semanales", "Rendimiento EMS", "Configuración"]);
+  assert.deepEqual(mobileMoreItems("admin").map((item) => item.label), ["Historial", "Perfil", "Precios", "Personal EMS", "Analíticas", "Bonos semanales", "Rendimiento EMS", "Configuración"]);
 });
 
 test("navigation active state matches nested routes without marking home active", () => {
